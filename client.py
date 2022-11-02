@@ -31,7 +31,7 @@ def Log(message : str):
     _log.info(message)
 
 def _doBackoff(fn : Callable[[None],bool]):
-    i : int = 0
+    i: int = 0
     backoff : int = _SELF_HEAL_BACKOFFS[i]
     success : bool = fn()
     while (not success):
@@ -43,9 +43,7 @@ def _doBackoff(fn : Callable[[None],bool]):
 @unique
 class Providers(IntEnum):
     OPRA = 1
-    OPRA_FIREHOSE = 2
-    MANUAL = 3
-    MANUAL_FIREHOSE = 4
+    MANUAL = 2
 
 @unique
 class QuoteType(IntEnum):
@@ -208,29 +206,24 @@ class _WebSocket(websocket.WebSocketApp):
             channels : set[str] = self.__getChannels()
             if (channels) and (len(channels) > 0):
                 for symbol in channels:
-                    if (((symbol == "lobby") or (symbol == "lobby_trades_only")) and (not self.__isFirehose)):
-                        _log.warn("Only 'FIREHOSE' providers may join the lobby channel")
-                    elif (((symbol != "lobby") and (symbol != "lobby_trades_only")) and self.__isFirehose):
-                        _log.warn("'FIREHOSE' providers may only join the lobby channel")
-                    else:
-                        subscriptionSelection : str = ""
-                        subscriptionList : list[str] = list()
-                        if (self.__useOnTrade):
-                            subscriptionSelection += ",\"trade_data\":\"true\""
-                            subscriptionList.append("trade")
-                        if (self.__useOnQuote):
-                            subscriptionSelection += ",\"quote_data\":\"true\""
-                            subscriptionList.append("quote")
-                        if (self.__useOnOI):
-                            subscriptionSelection += ",\"open_interest_data\":\"true\""
-                            subscriptionList.append("open interest")
-                        if (self.__useOnUA):
-                            subscriptionSelection += ",\"unusual_activity_data\":\"true\""
-                            subscriptionList.append("unusual activity")
-                        message : str = "{\"topic\":\"options:" + symbol + "\",\"event\":\"phx_join\"" + subscriptionSelection + ",\"payload\":{},\"ref\":null}"
-                        subscriptionSelection = ", ".join(subscriptionList)
-                        _log.info("Websocket {0} - Joining channel: {1} (subscriptions = {2})".format(self.__index, symbol, subscriptionSelection))
-                        super().send(message, websocket.ABNF.OPCODE_TEXT)
+                    subscriptionSelection : str = ""
+                    subscriptionList : list[str] = list()
+                    if (self.__useOnTrade):
+                        subscriptionSelection += ",\"trade_data\":\"true\""
+                        subscriptionList.append("trade")
+                    if (self.__useOnQuote):
+                        subscriptionSelection += ",\"quote_data\":\"true\""
+                        subscriptionList.append("quote")
+                    if (self.__useOnOI):
+                        subscriptionSelection += ",\"open_interest_data\":\"true\""
+                        subscriptionList.append("open interest")
+                    if (self.__useOnUA):
+                        subscriptionSelection += ",\"unusual_activity_data\":\"true\""
+                        subscriptionList.append("unusual activity")
+                    message : str = "{\"topic\":\"options:" + symbol + "\",\"event\":\"phx_join\"" + subscriptionSelection + ",\"payload\":{},\"ref\":null}"
+                    subscriptionSelection = ", ".join(subscriptionList)
+                    _log.info("Websocket {0} - Joining channel: {1} (subscriptions = {2})".format(self.__index, symbol, subscriptionSelection))
+                    super().send(message, websocket.ABNF.OPCODE_TEXT)
 
     def __tryReconnect(self) -> bool:
         _log.info("Websocket {0} - Reconnecting...".format(self.__index))
@@ -421,23 +414,12 @@ class Client:
 
     def __getAuthUrl(self) -> str:
         if self.__provider == Providers.OPRA: return "https://realtime-options.intrinio.com/auth?api_key=" + self.__apiKey
-        elif self.__provider == Providers.OPRA_FIREHOSE: return "https://realtime-options-firehose.intrinio.com:8000/auth?api_key=" + self.__apiKey
         elif self.__provider == Providers.MANUAL: return "http://" + self.__manualIP + "/auth?api_key=" + self.__apiKey
-        elif self.__provider == Providers.MANUAL_FIREHOSE: return "http://" + self.__manualIP + ":8000/auth?api_key=" + self.__apiKey
         else: raise ValueError("Provider not specified")
 
     def __getWebSocketUrl(self, token : str, index : int) -> str:
         if self.__provider == Providers.OPRA: return "wss://realtime-options.intrinio.com/socket/websocket?vsn=1.0.0&token=" + token
-        elif self.__provider == Providers.OPRA_FIREHOSE: return "wss://realtime-options-firehose.intrinio.com:800" + str(index) + "/socket/websocket?vsn=1.0.0&token=" + token
         elif self.__provider == Providers.MANUAL: return "ws://" + self.__manualIP + "/socket/websocket?vsn=1.0.0&token=" + token
-        elif self.__provider == Providers.MANUAL_FIREHOSE: return "ws://" + self.__manualIP + ":800" + str(index) + "/socket/websocket?vsn=1.0.0&token=" + token
-        else: raise ValueError("Provider not specified")
-
-    def __getWebSocketCount(self) -> str:
-        if self.__provider == Providers.OPRA: return 1
-        elif self.__provider == Providers.OPRA_FIREHOSE: return 6
-        elif self.__provider == Providers.MANUAL: return 1
-        elif self.__provider == Providers.MANUAL_FIREHOSE: return 6
         else: raise ValueError("Provider not specified")
 
     def __trySetToken(self) -> bool:
@@ -470,33 +452,28 @@ class Client:
         return self.__channels
 
     def __join(self, symbol : str):
-        if (((symbol == "lobby") or (symbol == "lobby_trades_only")) and ((self.__provider != Providers.MANUAL_FIREHOSE) and (self.__provider != Providers.OPRA_FIREHOSE))):
-            _log.warn("Only 'FIREHOSE' providers may join the lobby channel")
-        elif (((symbol != "lobby") and (symbol != "lobby_trades_only")) and ((self.__provider == Providers.MANUAL_FIREHOSE) or (self.__provider == Providers.OPRA_FIREHOSE))):
-            _log.warn("'FIREHOSE' providers may only join the lobby channel")
-        else:
-            if (symbol not in self.__channels):
-                self.__channels.add(symbol)
-                subscriptionSelection : str = ""
-                subscriptionList : list[str] = list()
-                if (self.__useOnTrade):
-                    subscriptionSelection += ",\"trade_data\":\"true\""
-                    subscriptionList.append("trade")
-                if (self.__useOnQuote):
-                    subscriptionSelection += ",\"quote_data\":\"true\""
-                    subscriptionList.append("quote")
-                if (self.__useOnOpenInterest):
-                    subscriptionSelection += ",\"open_interest_data\":\"true\""
-                    subscriptionList.append("open interest")
-                if (self.__useOnUnusualActivity):
-                    subscriptionSelection += ",\"unusual_activity_data\":\"true\""
-                    subscriptionList.append("unusual activity")
-                message : str = "{\"topic\":\"options:" + symbol + "\",\"event\":\"phx_join\"" + subscriptionSelection + ",\"payload\":{},\"ref\":null}"
-                for i in range(len(self.__webSockets)):
-                    if (self.__webSockets[i].isReady):
-                        subscriptionSelection = ", ".join(subscriptionList)
-                        _log.info("Websocket {0} - Joining channel: {1} (subscriptions = {2})".format(i, symbol, subscriptionSelection))
-                        self.__webSockets[i].send(message)
+        if (symbol not in self.__channels):
+            self.__channels.add(symbol)
+            subscriptionSelection: str = ""
+            subscriptionList: list[str] = list()
+            if (self.__useOnTrade):
+                subscriptionSelection += ",\"trade_data\":\"true\""
+                subscriptionList.append("trade")
+            if (self.__useOnQuote):
+                subscriptionSelection += ",\"quote_data\":\"true\""
+                subscriptionList.append("quote")
+            if (self.__useOnOpenInterest):
+                subscriptionSelection += ",\"open_interest_data\":\"true\""
+                subscriptionList.append("open interest")
+            if (self.__useOnUnusualActivity):
+                subscriptionSelection += ",\"unusual_activity_data\":\"true\""
+                subscriptionList.append("unusual activity")
+            message: str = "{\"topic\":\"options:" + symbol + "\",\"event\":\"phx_join\"" + subscriptionSelection + ",\"payload\":{},\"ref\":null}"
+            for i in range(len(self.__webSockets)):
+                if (self.__webSockets[i].isReady):
+                    subscriptionSelection = ", ".join(subscriptionList)
+                    _log.info("Websocket {0} - Joining channel: {1} (subscriptions = {2})".format(i, symbol, subscriptionSelection))
+                    self.__webSockets[i].send(message)
             
 
     def __leave(self, symbol : str):
@@ -509,24 +486,19 @@ class Client:
                     self.__webSockets[i].send(message)
 
     def join(self, *symbols):
-        if ((self.__provider == Providers.MANUAL_FIREHOSE) or (self.__provider == Providers.OPRA_FIREHOSE)):
-            _log.warn("'FIREHOSE' providers must join the lobby channel. Use the function 'joinLobby' instead.")
-        else:
-            if self.__isStarted:
-                while not self.__allReady(): time.sleep(1.0)
-            for (symbol) in symbols:
-                if (not symbol in self.__channels):
-                    self.__join(symbol)
+        if self.__isStarted:
+            while not self.__allReady(): time.sleep(1.0)
+        for (symbol) in symbols:
+            if (not symbol in self.__channels):
+                self.__join(symbol)
 
-    def joinLobby(self):
-        if ((self.__provider != Providers.MANUAL_FIREHOSE) and (self.__provider != Providers.OPRA_FIREHOSE)):
-            _log.warn("Only 'FIREHOSE' providers may join the lobby channel")
-        elif ("lobby" in self.__channels):
-            _log.warn("This client has already joined the lobby channel")
+    def joinFirehose(self):
+        if ("$FIREHOSE" in self.__channels):
+            _log.warn("This client has already joined the firehose channel")
         else:
             if self.__isStarted:
                 while not self.__allReady(): time.sleep(1.0)
-            self.__join("lobby")
+            self.__join("$FIREHOSE")
 
     def leave(self, *symbols):
         if not symbols:
@@ -538,9 +510,9 @@ class Client:
         for sym in symbolSet:
             self.__leave(sym)
 
-    def leaveLobby(self):
-        if ("lobby" in self.__channels):
-            self.__leave("lobby")
+    def leaveFirehose(self):
+        if ("$FIREHOSE" in self.__channels):
+            self.__leave("$FIREHOSE")
 
     def __socketStartFn(self, index : int, token: str):
         _log.info("Websocket {0} - Connecting...".format(index))
@@ -553,7 +525,7 @@ class Client:
             self.__getChannels, 
             self.__getToken, 
             self.__getWebSocketUrl, 
-            ((self.__provider == Providers.MANUAL_FIREHOSE) or (self.__provider == Providers.OPRA_FIREHOSE)),
+            False, # is firehose
             self.__useOnTrade,
             self.__useOnQuote,
             self.__useOnOpenInterest,
