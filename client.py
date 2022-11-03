@@ -134,8 +134,7 @@ class Refresh:
         self.timestamp: float = timestamp
 
     def __str__(self) -> str:
-        return "Refresh (Symbol: {0}, Value: {1}, Timestamp: {2})".format(self.symbol, self.openInterest,
-                                                                               self.timestamp)
+        return "Refresh (Symbol: {0}, Value: {1}, Timestamp: {2})".format(self.symbol, self.openInterest, self.timestamp)
 
 
 @unique
@@ -356,7 +355,7 @@ def _heartbeatFn(wsLock: threading.Lock, webSocket: _WebSocket):
 def _threadFn(index: int, data: queue.Queue,
               onTrade: Callable[[Trade], None],
               onQuote: Callable[[Quote], None] = None,
-              onOpenInterest: Callable[[Refresh], None] = None,
+              onRefresh: Callable[[Refresh], None] = None,
               onUnusualActivity: Callable[[UnusualActivity], None] = None):
     _log.debug("Starting worker thread {0}".format(index))
     while (not _stopFlag.is_set()):
@@ -403,9 +402,9 @@ def _threadFn(index: int, data: queue.Queue,
                 elif (msgType == 3):
                     message: bytes = datum[startIndex:(startIndex + 34)]
                     symbol: str = message[0:21].decode('ascii')
-                    openInterest: int = struct.unpack_from('<i', message, 22)[0]
+                    refresh: int = struct.unpack_from('<i', message, 22)[0]
                     timestamp: float = struct.unpack_from('<d', message, 26)[0]
-                    if onOpenInterest: onOpenInterest(Refresh(symbol, openInterest, timestamp))
+                    if onRefresh: onRefresh(Refresh(symbol, refresh, timestamp))
                     startIndex = startIndex + 34
                 else:
                     _log.warn("Invalid Message Type: {0}".format(msgType))
