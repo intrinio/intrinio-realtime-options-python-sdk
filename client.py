@@ -65,12 +65,12 @@ class Quote:
 
     def __str__(self) -> str:
         return "Quote (Contract: {0}, AskPrice: {1:.2f}, AskSize: {2}, BidPrice: {3:.2f}, BidSize: {4}, Timestamp: {5})"\
-                .format(self.contract,
-                        self.ask_price,
-                        self.ask_size,
-                        self.bid_price,
-                        self.bid_size,
-                        self.timestamp)
+               .format(self.contract,
+                       self.ask_price,
+                       self.ask_size,
+                       self.bid_price,
+                       self.bid_size,
+                       self.timestamp)
 
     def get_strike_price(self) -> float:
         return float(self.contract[(self.contract.index('_') + 8):])
@@ -101,15 +101,15 @@ class Trade:
         self.underlying_price_at_execution = underlying_price_at_execution
 
     def __str__(self) -> str:
-        return ("Trade (Contract: {0}, Price: {1:.2f}, Size: {2}, Timestamp: {3}, TotalVolume: {4}, AskPriceAtExecution: {5:.2f}, BidPriceAtExecution: {6:.2f}, UnderlyingPriceAtExecution: {7:.2f})"\
-                .format(self.contract,
-                        self.price,
-                        self.size,
-                        self.timestamp,
-                        self.total_volume,
-                        self.ask_price_at_execution,
-                        self.bid_price_at_execution,
-                        self.underlying_price_at_execution))
+        return "Trade (Contract: {0}, Price: {1:.2f}, Size: {2}, Timestamp: {3}, TotalVolume: {4}, AskPriceAtExecution: {5:.2f}, BidPriceAtExecution: {6:.2f}, UnderlyingPriceAtExecution: {7:.2f})"\
+               .format(self.contract,
+                       self.price,
+                       self.size,
+                       self.timestamp,
+                       self.total_volume,
+                       self.ask_price_at_execution,
+                       self.bid_price_at_execution,
+                       self.underlying_price_at_execution)
 
     def get_strike_price(self) -> float:
         return float(self.contract[(self.contract.index('_') + 8):])
@@ -144,13 +144,22 @@ class UnusualActivityType(IntEnum):
 
 
 class Refresh:
-    def __init__(self, contract: str, open_interest: int, timestamp: float):
+    def __init__(self, contract: str, open_interest: int, open_price: float, close_price: float, high_price: float, low_price: float):
         self.contract: str = contract
         self.open_interest: int = open_interest
-        self.timestamp: float = timestamp
+        self.open_price: float = open_price
+        self.close_price: float = close_price
+        self.high_price: float = high_price
+        self.low_price: float = low_price
 
     def __str__(self) -> str:
-        return "Refresh (Symbol: {0}, Value: {1}, Timestamp: {2})".format(self.contract, self.open_interest, self.timestamp)
+        return "Refresh (Contract: {0}, OpenInterest: {1}, OpenPrice: {2:.2f}, ClosePrice: {3:.2f}, HighPrice: {4:.2f}, LowPrice: {5:.2f})"\
+               .format(self.contract,
+                       self.open_interest,
+                       self.open_price,
+                       self.close_price,
+                       self.high_price,
+                       self.low_price)
 
     def get_strike_price(self) -> float:
         return float(self.contract[(self.contract.index('_') + 8):])
@@ -193,7 +202,7 @@ class UnusualActivity:
         self.timestamp: float = timestamp
 
     def __str__(self) -> str:
-        return "Unusual Activity (Type: {0}, Sentiment: {1}, Symbol: {2}, Total Value: {3:.2f}, Total Size: {4}, Average Price: {5:.2f}, Ask at Execution: {6:.2f}, Bid at Execution: {7:.2f}, Underlying Price at Execution: {8:.2f}, Timestamp: {5})".format(
+        return "Unusual Activity (Type: {0}, Sentiment: {1}, Contract: {2}, Total Value: {3:.2f}, Total Size: {4}, Average Price: {5:.2f}, Ask at Execution: {6:.2f}, Bid at Execution: {7:.2f}, Underlying Price at Execution: {8:.2f}, Timestamp: {5})".format(
             self.type, self.sentiment, self.symbol, self.totalValue, self.totalSize, self.averagePrice,
             self.askAtExecution, self.bidAtExecution, self.priceAtExecution, self.timestamp)
 
