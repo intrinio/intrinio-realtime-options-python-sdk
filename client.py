@@ -27,11 +27,11 @@ _log.setLevel(logging.INFO)
 _log.addHandler(_logHandler)
 
 
-def Log(message: str):
+def log(message: str):
     _log.info(message)
 
 
-def _doBackoff(fn: Callable[[None], bool]):
+def do_backoff(fn: Callable[[None], bool]):
     i: int = 0
     backoff: int = _SELF_HEAL_BACKOFFS[i]
     success: bool = fn()
@@ -49,99 +49,83 @@ class Providers(IntEnum):
 
 
 @unique
-class QuoteType(IntEnum):
-    ASK = 1
-    BID = 2
-
-
-@unique
 class LogLevel(IntEnum):
     DEBUG = logging.DEBUG
     INFO = logging.INFO
 
 
 class Quote:
-    def __init__(self, symbol: str, type: QuoteType, price: float, size: int, timestamp: float):
-        self.symbol: str = symbol
-        self.type: QuoteType = type
-        self.price: float = price
-        self.size: int = size
+    def __init__(self, contract: str, ask_price: float, ask_size: int, bid_price: float, bid_size: int, timestamp: float):
+        self.contract: str = contract
+        self.ask_price: float = ask_price
+        self.bid_price: float = bid_price
+        self.ask_size: int = ask_size
+        self.bid_size: int = bid_size
         self.timestamp: float = timestamp
 
     def __str__(self) -> str:
-        return "Quote (Type: {0}, Symbol: {1}, Price: {2:.2f}, Size: {3}, Timestamp: {4})".format(self.type,
-                                                                                                  self.symbol,
-                                                                                                  self.price, self.size,
-                                                                                                  self.timestamp)
+        return "Quote (Contract: {0}, AskPrice: {1:.2f}, AskSize: {2}, BidPrice: {3:.2f}, BidSize: {4}, Timestamp: {5})"\
+                .format(self.contract,
+                        self.ask_price,
+                        self.ask_size,
+                        self.bid_price,
+                        self.bid_size,
+                        self.timestamp)
 
-    def getStrikePrice(self) -> float:
-        whole: int = (self.symbol[13] - '0') * 10000 + (self.symbol[14] - '0') * 1000 + (
-                    self.symbol[15] - '0') * 100 + (self.symbol[16] - '0') * 10 + (self.symbol[17] - '0')
-        part: float = (self.symbol[18] - '0') * 0.1 + (self.symbol[19] - '0') * 0.01 + (self.symbol[20] - '0') * 0.001
-        return float(whole) + part
+    def get_strike_price(self) -> float:
+        return float(self.contract[(self.contract.index('_') + 8):])
 
-    def isPut(self) -> bool:
-        return self.symbol[12] == 'P'
+    def is_put(self) -> bool:
+        return self.contract[(self.contract.index('_') + 7)] == 'P'
 
-    def isCall(self) -> bool:
-        return self.symbol[12] == 'C'
+    def is_call(self) -> bool:
+        return self.contract[(self.contract.index('_') + 7)] == 'C'
 
-    def getExpirationDate(self) -> time.struct_time:
-        return time.strptime(self.symbol[6:12], "%y%m%d")
+    def get_expiration_date(self) -> time.struct_time:
+        date_start_index: int = self.contract.index('_') + 1
+        return time.strptime(self.contract[date_start_index: (date_start_index+6)], "%y%m%d")
 
-    def getUnderlyingSymbol(self) -> str:
-        return self.symbol[0:6].rstrip('_')
+    def get_underlying_symbol(self) -> str:
+        return self.contract[0:self.contract.index('_')].trim()
 
 
 class Trade:
-    def __init__(self, symbol: str, price: float, size: int, totalVolume: int, timestamp: float):
-        self.symbol: str = symbol
+    def __init__(self, contract: str, price: float, size: int, timestamp: float, total_volume: int, ask_price_at_execution: float, bid_price_at_execution: float, underlying_price_at_execution: float):
+        self.contract: str = contract
         self.price: float = price
         self.size: int = size
-        self.totalVolume: int = totalVolume
         self.timestamp: float = timestamp
+        self.total_volume: int = total_volume
+        self.ask_price_at_execution = ask_price_at_execution
+        self.bid_price_at_execution = bid_price_at_execution
+        self.underlying_price_at_execution = underlying_price_at_execution
 
     def __str__(self) -> str:
-        return ("Trade (Symbol: {0}, Price: {1:.2f}, Size: {2}, TotalVolume: {3}, Timestamp: {4})".format(self.symbol,
-                                                                                                          self.price,
-                                                                                                          self.size,
-                                                                                                          self.totalVolume,
-                                                                                                          self.timestamp))
+        return ("Trade (Contract: {0}, Price: {1:.2f}, Size: {2}, Timestamp: {3}, TotalVolume: {4}, AskPriceAtExecution: {5:.2f}, BidPriceAtExecution: {6:.2f}, UnderlyingPriceAtExecution: {7:.2f})"\
+                .format(self.contract,
+                        self.price,
+                        self.size,
+                        self.timestamp,
+                        self.total_volume,
+                        self.ask_price_at_execution,
+                        self.bid_price_at_execution,
+                        self.underlying_price_at_execution))
 
-    def getStrikePrice(self) -> float:
-        whole: int = (self.symbol[13] - '0') * 10000 + (self.symbol[14] - '0') * 1000 + (
-                    self.symbol[15] - '0') * 100 + (self.symbol[16] - '0') * 10 + (self.symbol[17] - '0')
-        part: float = (self.symbol[18] - '0') * 0.1 + (self.symbol[19] - '0') * 0.01 + (self.symbol[20] - '0') * 0.001
-        return float(whole) + part
+    def get_strike_price(self) -> float:
+        return float(self.contract[(self.contract.index('_') + 8):])
 
-    def isPut(self) -> bool:
-        return self.symbol[12] == 'P'
+    def is_put(self) -> bool:
+        return self.contract[(self.contract.index('_') + 7)] == 'P'
 
-    def isCall(self) -> bool:
-        return self.symbol[12] == 'C'
+    def is_call(self) -> bool:
+        return self.contract[(self.contract.index('_') + 7)] == 'C'
 
-    def getExpirationDate(self) -> time.struct_time:
-        return time.strptime(self.symbol[6:12], "%y%m%d")
+    def get_expiration_date(self) -> time.struct_time:
+        date_start_index: int = self.contract.index('_') + 1
+        return time.strptime(self.contract[date_start_index: (date_start_index + 6)], "%y%m%d")
 
-    def getUnderlyingSymbol(self) -> str:
-        return self.symbol[0:6].rstrip('_')
-
-
-class Refresh:
-    def __init__(self, symbol: str, openInterest: int, timestamp: float):
-        self.symbol: str = symbol
-        self.openInterest: int = openInterest
-        self.timestamp: float = timestamp
-
-    def __str__(self) -> str:
-        return "Refresh (Symbol: {0}, Value: {1}, Timestamp: {2})".format(self.symbol, self.openInterest, self.timestamp)
-
-
-@unique
-class UnusualActivityType(IntEnum):
-    BLOCK = 4
-    SWEEP = 5
-    LARGE = 6
+    def get_underlying_symbol(self) -> str:
+        return self.contract[0:self.contract.index('_')].trim()
 
 
 @unique
@@ -149,6 +133,40 @@ class UnusualActivitySentiment(IntEnum):
     NEUTRAL = 0
     BULLISH = 1
     BEARISH = 2
+
+
+@unique
+class UnusualActivityType(IntEnum):
+    BLOCK = 3
+    SWEEP = 4
+    LARGE = 5
+    GOLDEN = 6
+
+
+class Refresh:
+    def __init__(self, contract: str, open_interest: int, timestamp: float):
+        self.contract: str = contract
+        self.open_interest: int = open_interest
+        self.timestamp: float = timestamp
+
+    def __str__(self) -> str:
+        return "Refresh (Symbol: {0}, Value: {1}, Timestamp: {2})".format(self.contract, self.open_interest, self.timestamp)
+
+    def get_strike_price(self) -> float:
+        return float(self.contract[(self.contract.index('_') + 8):])
+
+    def is_put(self) -> bool:
+        return self.contract[(self.contract.index('_') + 7)] == 'P'
+
+    def is_call(self) -> bool:
+        return self.contract[(self.contract.index('_') + 7)] == 'C'
+
+    def get_expiration_date(self) -> time.struct_time:
+        date_start_index: int = self.contract.index('_') + 1
+        return time.strptime(self.contract[date_start_index: (date_start_index+6)], "%y%m%d")
+
+    def get_underlying_symbol(self) -> str:
+        return self.contract[0:self.contract.index('_')].trim()
 
 
 class UnusualActivity:
@@ -179,23 +197,21 @@ class UnusualActivity:
             self.type, self.sentiment, self.symbol, self.totalValue, self.totalSize, self.averagePrice,
             self.askAtExecution, self.bidAtExecution, self.priceAtExecution, self.timestamp)
 
-    def getStrikePrice(self) -> float:
-        whole: int = (self.symbol[13] - '0') * 10000 + (self.symbol[14] - '0') * 1000 + (
-                    self.symbol[15] - '0') * 100 + (self.symbol[16] - '0') * 10 + (self.symbol[17] - '0')
-        part: float = (self.symbol[18] - '0') * 0.1 + (self.symbol[19] - '0') * 0.01 + (self.symbol[20] - '0') * 0.001
-        return float(whole) + part
+    def get_strike_price(self) -> float:
+        return float(self.contract[(self.contract.index('_') + 8):])
 
-    def isPut(self) -> bool:
-        return self.symbol[12] == 'P'
+    def is_put(self) -> bool:
+        return self.contract[(self.contract.index('_') + 7)] == 'P'
 
-    def isCall(self) -> bool:
-        return self.symbol[12] == 'C'
+    def is_call(self) -> bool:
+        return self.contract[(self.contract.index('_') + 7)] == 'C'
 
-    def getExpirationDate(self) -> time.struct_time:
-        return time.strptime(self.symbol[6:12], "%y%m%d")
+    def get_expiration_date(self) -> time.struct_time:
+        date_start_index: int = self.contract.index('_') + 1
+        return time.strptime(self.contract[date_start_index: (date_start_index + 6)], "%y%m%d")
 
-    def getUnderlyingSymbol(self) -> str:
-        return self.symbol[0:6].rstrip('_')
+    def get_underlying_symbol(self) -> str:
+        return self.contract[0:self.contract.index('_')].trim()
 
 
 class _WebSocket(websocket.WebSocketApp):
@@ -284,7 +300,7 @@ class _WebSocket(websocket.WebSocketApp):
                 _log.info("Websocket - Closed - {0}: {1}".format(closeStatusCode, closeMsg))
                 self.isReady = False
                 if (not _stopFlag.is_set()):
-                    _doBackoff(self.__tryReconnect)
+                    do_backoff(self.__tryReconnect)
         finally:
             self.__wsLock.release()
 
@@ -526,7 +542,7 @@ class Client:
         self.__tLock.acquire()
         try:
             if ((time.time() - self.__token[1]) > (60 * 60 * 24)):  # 60sec/min * 60min/hr * 24hrs = 1 day
-                _doBackoff(self.__trySetToken)
+                do_backoff(self.__trySetToken)
             return self.__token[0]
         finally:
             self.__tLock.release()

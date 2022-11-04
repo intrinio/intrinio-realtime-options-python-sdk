@@ -35,7 +35,7 @@ def on_quote(quote: client.Quote):
         with bid_count_lock:
             bid_count += 1
     else:
-        client.Log("on_quote - Unknown quote type {0}", quote.type)
+        client.log("on_quote - Unknown quote type {0}", quote.type)
 
 
 def on_trade(trade: client.Trade):
@@ -73,7 +73,7 @@ def on_unusual_activity(ua: client.UnusualActivity):
         with golden_trade_count_lock:
             golden_trade_count += 1
     else:
-        client.Log("on_unusual_activity - Unknown type {0}", ua.type)
+        client.log("on_unusual_activity - Unknown type {0}", ua.type)
 
 
 class Summarize(threading.Thread):
@@ -86,8 +86,8 @@ class Summarize(threading.Thread):
         while not self.__stop_flag.is_set():
             time.sleep(10.0)
             (dataMsgs, txtMsgs, queueDepth) = self.__client.getStats()
-            client.Log("Client Stats - Data Messages: {0}, Text Messages: {1}, Queue Depth: {2}".format(dataMsgs, txtMsgs, queueDepth))
-            client.Log(
+            client.log("Client Stats - Data Messages: {0}, Text Messages: {1}, Queue Depth: {2}".format(dataMsgs, txtMsgs, queueDepth))
+            client.log(
                 "App Stats - Trades: {0}, Asks: {1}, Bids: {2}, Refreshes: {3}, Blocks: {4}, Sweeps: {5}, Large Trades: {6}, Goldens: {7}"
                 .format(
                     trade_count,
@@ -129,7 +129,7 @@ stop_event = Event()
 
 
 def on_kill_process(sig, frame):
-    client.Log("Sample Application - Stopping")
+    client.log("Sample Application - Stopping")
     stop_event.set()
     intrinioRealtimeOptionsClient.stop()
     sys.exit(0)
