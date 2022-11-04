@@ -267,16 +267,16 @@ class _WebSocket(websocket.WebSocketApp):
         try:
             self.isReady = True
             self.__isReconnecting = False
-            if (not self.__heartbeatThread.is_alive()):
+            if not self.__heartbeatThread.is_alive():
                 self.__heartbeatThread.start()
             for worker in self.__workerThreads:
                 if (not worker.is_alive()):
                     worker.start()
         finally:
             self.__wsLock.release()
-        if (self.__getChannels) and (callable(self.__getChannels)):
+        if self.__getChannels and callable(self.__getChannels):
             channels: set[str] = self.__getChannels()
-            if (channels) and (len(channels) > 0):
+            if channels and (len(channels) > 0):
                 for symbol in channels:
                     subscriptionSelection: str = ""
                     subscriptionList: list[str] = list()
@@ -356,6 +356,9 @@ class _WebSocket(websocket.WebSocketApp):
     def send(self, message: str):
         super().send(message, websocket.ABNF.OPCODE_TEXT)
 
+    def send_binary(self, message: bytes):
+        super().send(message, websocket.ABNF.OPCODE_BINARY)
+
     def reset(self):
         self.lastReset = time.time()
 
@@ -371,52 +374,52 @@ class Config:
         self.logLevel: LogLevel = logLevel
 
 
-def _heartbeatFn(wsLock: threading.Lock, webSocket: _WebSocket):
+def _heartbeat_fn(ws_lock: threading.Lock, web_socket: _WebSocket):
     _log.debug("Starting heartbeat")
     while not _stopFlag.is_set():
         time.sleep(_HEARTBEAT_INTERVAL)
         _log.debug("Sending heartbeat")
-        wsLock.acquire()
+        ws_lock.acquire()
         try:
-            if (not _stopFlag.is_set()):
-                webSocket.sendHeartbeat()
+            if not _stopFlag.is_set():
+                web_socket.sendHeartbeat()
         finally:
-            wsLock.release()
+            ws_lock.release()
     _log.debug("Heartbeat stopped")
 
 
-def _threadFn(index: int, data: queue.Queue,
-              onTrade: Callable[[Trade], None],
-              onQuote: Callable[[Quote], None] = None,
-              onRefresh: Callable[[Refresh], None] = None,
-              onUnusualActivity: Callable[[UnusualActivity], None] = None):
+def _thread_fn(index: int, data: queue.Queue,
+               on_trade: Callable[[Trade], None],
+               on_quote: Callable[[Quote], None] = None,
+               on_refresh: Callable[[Refresh], None] = None,
+               on_unusual_activity: Callable[[UnusualActivity], None] = None):
     _log.debug("Starting worker thread {0}".format(index))
-    while (not _stopFlag.is_set()):
+    while not _stopFlag.is_set():
         try:
             datum: bytes = data.get(True, 1.0)
             count: int = datum[0]
             startIndex: int = 1
             for _ in range(count):
-                msgType: int = datum[startIndex + 21]
-                if (msgType == 1) or (msgType == 2):
+                msg_type: int = datum[startIndex + 21]
+                if (msg_type == 1) or (msg_type == 2):
                     message: bytes = datum[startIndex:(startIndex + 42)]
                     symbol: str = message[0:21].decode('ascii')
                     type: QuoteType = message[21]
                     price: float = struct.unpack_from('<d', message, 22)[0]
                     size: int = struct.unpack_from('<L', message, 30)[0]
                     timestamp: float = struct.unpack_from('<d', message, 34)[0]
-                    if onQuote: onQuote(Quote(symbol, type, price, size, timestamp))
+                    if on_quote: on_quote(Quote(symbol, type, price, size, timestamp))
                     startIndex = startIndex + 42
-                elif (msgType == 0):
+                elif (msg_type == 0):
                     message: bytes = datum[startIndex:(startIndex + 50)]
                     symbol: str = message[0:21].decode('ascii')
                     price: float = struct.unpack_from('<d', message, 22)[0]
                     size: int = struct.unpack_from('<L', message, 30)[0]
                     timestamp: float = struct.unpack_from('<d', message, 34)[0]
                     totalVolume: int = struct.unpack_from('<Q', message, 42)[0]
-                    onTrade(Trade(symbol, price, size, totalVolume, timestamp))
+                    on_trade(Trade(symbol, price, size, totalVolume, timestamp))
                     startIndex = startIndex + 50
-                elif (msgType > 3):
+                elif (msg_type > 3):
                     message: bytes = datum[startIndex:(startIndex + 55)]
                     symbol: str = message[0:21].decode('ascii')
                     type: UnusualActivityType = message[21]
@@ -428,19 +431,19 @@ def _threadFn(index: int, data: queue.Queue,
                     bidAtExecution: float = struct.unpack_from('<f', message, 39)[0]
                     priceAtExecution: float = struct.unpack_from('<f', message, 43)[0]
                     timestamp: float = struct.unpack_from('<d', message, 47)[0]
-                    if onUnusualActivity: onUnusualActivity(
+                    if on_unusual_activity: on_unusual_activity(
                         UnusualActivity(symbol, type, sentiment, totalValue, totalSize, averagePrice, askAtExecution,
                                         bidAtExecution, priceAtExecution, timestamp))
                     startIndex = startIndex + 55
-                elif (msgType == 3):
+                elif (msg_type == 3):
                     message: bytes = datum[startIndex:(startIndex + 34)]
                     symbol: str = message[0:21].decode('ascii')
                     refresh: int = struct.unpack_from('<i', message, 22)[0]
                     timestamp: float = struct.unpack_from('<d', message, 26)[0]
-                    if onRefresh: onRefresh(Refresh(symbol, refresh, timestamp))
+                    if on_refresh: on_refresh(Refresh(symbol, refresh, timestamp))
                     startIndex = startIndex + 34
                 else:
-                    _log.warn("Invalid Message Type: {0}".format(msgType))
+                    _log.warn("Invalid Message Type: {0}".format(msg_type))
         except queue.Empty:
             continue
     _log.debug("Worker thread {0} stopped".format(index))
@@ -463,28 +466,28 @@ class Client:
             if (callable(onTrade)):
                 self.__useOnTrade: bool = True
             else:
-                raise ValueError("Parameter 'onTrade' must be a function")
+                raise ValueError("Parameter 'on_trade' must be a function")
         else:
             self.__useOnTrade: bool = False
         if (onQuote):
             if (callable(onQuote)):
                 self.__useOnQuote: bool = True
             else:
-                raise ValueError("Parameter 'onQuote' must be a function")
+                raise ValueError("Parameter 'on_quote' must be a function")
         else:
             self.__useOnQuote: bool = False
         if (onRefresh):
             if (callable(onRefresh)):
                 self.__useOnRefresh: bool = True
             else:
-                raise ValueError("Parameter 'onRefresh' must be a function")
+                raise ValueError("Parameter 'on_refresh' must be a function")
         else:
             self.__useOnRefresh: bool = False
         if (onUnusualActivity):
             if (callable(onUnusualActivity)):
                 self.__useOnUnusualActivity: bool = True
             else:
-                raise ValueError("Parameter 'onUnusualActivity' must be a function")
+                raise ValueError("Parameter 'on_unusual_activity' must be a function")
         else:
             self.__useOnUnusualActivity: bool = False
         self.__provider: Providers = config.provider
@@ -499,10 +502,10 @@ class Client:
         self.__data: queue.Queue = queue.Queue()
         self.__tLock: threading.Lock = threading.Lock()
         self.__wsLock: threading.Lock = threading.Lock()
-        self.__heartbeatThread: threading.Thread = threading.Thread(None, _heartbeatFn,
+        self.__heartbeatThread: threading.Thread = threading.Thread(None, _heartbeat_fn,
                                                                     args=[self.__wsLock, self.__webSocket],
                                                                     daemon=True)
-        self.__workerThreads: list[threading.Thread] = [threading.Thread(None, _threadFn,
+        self.__workerThreads: list[threading.Thread] = [threading.Thread(None, _thread_fn,
                                                                          args=[i, self.__data, onTrade, onQuote,
                                                                                onRefresh, onUnusualActivity],
                                                                          daemon=True) for i in range(config.numThreads)]
@@ -514,7 +517,7 @@ class Client:
         self.__wsLock.acquire()
         ready: bool = True
         try:
-            ready = self.__webSocket
+            ready = self.__webSocket.isReady
         finally:
             self.__wsLock.release()
         return ready
@@ -567,36 +570,41 @@ class Client:
     def __getChannels(self) -> set[str]:
         return self.__channels
 
+    def __get_option_mask(self) -> int:
+        mask: int = 0
+        if self.__useOnTrade:
+            mask |= 0b0001
+        if self.__useOnQuote:
+            mask |= 0b0010
+        if self.__useOnRefresh:
+            mask |= 0b0100
+        if self.__useOnUnusualActivity:
+            mask |= 0b1000
+        return mask
+
     def __join(self, symbol: str):
-        if (symbol not in self.__channels):
+        if symbol not in self.__channels:
             self.__channels.add(symbol)
-            subscriptionSelection: str = ""
-            subscriptionList: list[str] = list()
-            if (self.__useOnTrade):
-                subscriptionSelection += ",\"trade_data\":\"true\""
-                subscriptionList.append("trade")
-            if (self.__useOnQuote):
-                subscriptionSelection += ",\"quote_data\":\"true\""
-                subscriptionList.append("quote")
-            if (self.__useOnRefresh):
-                subscriptionSelection += ",\"open_interest_data\":\"true\""
-                subscriptionList.append("open interest")
-            if (self.__useOnUnusualActivity):
-                subscriptionSelection += ",\"unusual_activity_data\":\"true\""
-                subscriptionList.append("unusual activity")
-            message: str = "{\"topic\":\"options:" + symbol + "\",\"event\":\"phx_join\"" + subscriptionSelection + ",\"payload\":{},\"ref\":null}"
+            symbol_bytes = bytes(symbol, 'utf-8')
+            message: bytes = bytearray(len(symbol_bytes)+2)
+            message[0] = 74  # join code
+            message[1] = self.__get_option_mask()
+            message[2:] = symbol_bytes
             if self.__webSocket.isReady:
-                subscriptionSelection = ", ".join(subscriptionList)
-                _log.info("Websocket - Joining channel: {0} (subscriptions = {1})".format(symbol, subscriptionSelection))
-                self.__webSocket.send(message)
+                _log.info("Websocket - Joining channel: {0}".format(symbol))
+                self.__webSocket.send_binary(message)
 
     def __leave(self, symbol: str):
-        if (symbol in self.__channels):
+        if symbol in self.__channels:
             self.__channels.remove(symbol)
-            message: str = "{\"topic\":\"options:" + symbol + "\",\"event\":\"phx_leave\",\"payload\":{},\"ref\":null}"
+            symbol_bytes = bytes(symbol, 'utf-8')
+            message: bytes = bytearray(len(symbol_bytes) + 2)
+            message[0] = 76  # leave code
+            message[1] = self.__get_option_mask()
+            message[2:] = symbol_bytes
             if self.__webSocket.isReady:
                 _log.info("Websocket - Leaving channel: {0}".format(symbol))
-                self.__webSocket.send(message)
+                self.__webSocket.send_binary(message)
 
     def join(self, *symbols):
         if self.__isStarted:
@@ -627,10 +635,10 @@ class Client:
         if ("$FIREHOSE" in self.__channels):
             self.__leave("$FIREHOSE")
 
-    def __socketStartFn(self, token: str):
+    def __socket_start_fn(self, token: str):
         _log.info("Websocket - Connecting...")
-        wsUrl: str = self.__getWebSocketUrl(token)
-        self.__webSocket = _WebSocket(wsUrl,
+        ws_url: str = self.__getWebSocketUrl(token)
+        self.__webSocket = _WebSocket(ws_url,
                                     self.__wsLock,
                                     self.__heartbeatThread,
                                     self.__workerThreads,
@@ -650,7 +658,7 @@ class Client:
         token: str = self.__getToken()
         self.__wsLock.acquire()
         try:
-            self.__socketThread = threading.Thread = threading.Thread(None, self.__socketStartFn, args=[token], daemon=True)
+            self.__socketThread = threading.Thread = threading.Thread(None, self.__socket_start_fn, args=[token], daemon=True)
         finally:
             self.__wsLock.release()
         self.__socketThread.start()

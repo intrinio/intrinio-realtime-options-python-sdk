@@ -133,7 +133,7 @@ config: client.Config = client.Config(
     logLevel=client.LogLevel.INFO)
 
 # Register only the callbacks that you want.
-# Take special care when registering the 'onQuote' handler as it will increase throughput by ~10x
+# Take special care when registering the 'on_quote' handler as it will increase throughput by ~10x
 intrinioRealtimeOptionsClient: client.Client = client.Client(config, onTrade=on_trade)
 
 # Use this to subscribe to the entire univers of symbols (option contracts). This requires special permission.
