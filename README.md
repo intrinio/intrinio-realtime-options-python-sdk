@@ -63,7 +63,7 @@ def on_quote(quote: client.Quote):
         with bid_count_lock:
             bid_count += 1
     else:
-        client.log("on_quote - Unknown quote type {0}", quote.type)
+        client.log("on_quote - Unknown quote activity_type {0}", quote.type)
 
 
 def on_trade(trade: client.Trade):
@@ -85,17 +85,17 @@ def on_unusual_activity(ua: client.UnusualActivity):
     global sweep_count_lock
     global large_trade_count
     global large_trade_count_lock
-    if (ua.type == client.UnusualActivityType.BLOCK):
+    if (ua.activity_type == client.UnusualActivityType.BLOCK):
         with block_count_lock:
             block_count += 1
-    elif (ua.type == client.UnusualActivityType.SWEEP):
+    elif (ua.activity_type == client.UnusualActivityType.SWEEP):
         with sweep_count_lock:
             sweep_count += 1
-    elif (ua.type == client.UnusualActivityType.LARGE):
+    elif (ua.activity_type == client.UnusualActivityType.LARGE):
         with large_trade_count_lock:
             large_trade_count += 1
     else:
-        client.log("on_unusual_activity - Unknown type {0}", ua.type)
+        client.log("on_unusual_activity - Unknown activity_type {0}", ua.activity_type)
 
 
 class Summarize(threading.Thread):
@@ -139,7 +139,7 @@ intrinioRealtimeOptionsClient: client.Client = client.Client(config, onTrade=on_
 # Use this to subscribe to the entire univers of symbols (option contracts). This requires special permission.
 # intrinioRealtimeOptionsClient.joinFirehose()
 
-# Use this to subscribe, dynamically, to an option chain (all option contracts for a given underlying symbol).
+# Use this to subscribe, dynamically, to an option chain (all option contracts for a given underlying contract).
 # intrinioRealtimeOptionsClient.join("AAPL")
 
 # Use this to subscribe, dynamically, to a specific option contract.

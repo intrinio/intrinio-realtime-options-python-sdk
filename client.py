@@ -180,31 +180,39 @@ class Refresh:
 
 class UnusualActivity:
     def __init__(self,
-                 symbol: str,
-                 type: UnusualActivityType,
+                 contract: str,
+                 activity_type: UnusualActivityType,
                  sentiment: UnusualActivitySentiment,
-                 totalValue: float,
-                 totalSize: int,
-                 averagePrice: float,
-                 askAtExecution: float,
-                 bidAtExecution: float,
-                 priceAtExecution: float,
+                 total_value: float,
+                 total_size: int,
+                 average_price: float,
+                 ask_price_at_execution: float,
+                 bid_price_at_execution: float,
+                 underlying_price_at_execution: float,
                  timestamp: float):
-        self.symbol: str = symbol
-        self.type: UnusualActivityType = type
+        self.contract: str = contract
+        self.activity_type: UnusualActivityType = activity_type
         self.sentiment: UnusualActivitySentiment = sentiment
-        self.totalValue: float = totalValue
-        self.totalSize: int = totalSize
-        self.averagePrice: float = averagePrice
-        self.askAtExecution: float = askAtExecution
-        self.bidAtExecution: float = bidAtExecution
-        self.priceAtExecution: float = priceAtExecution
+        self.total_value: float = total_value
+        self.total_size: int = total_size
+        self.average_price: float = average_price
+        self.ask_price_at_execution: float = ask_price_at_execution
+        self.bid_price_at_execution: float = bid_price_at_execution
+        self.underlying_price_at_execution: float = underlying_price_at_execution
         self.timestamp: float = timestamp
 
     def __str__(self) -> str:
-        return "Unusual Activity (Type: {0}, Sentiment: {1}, Contract: {2}, Total Value: {3:.2f}, Total Size: {4}, Average Price: {5:.2f}, Ask at Execution: {6:.2f}, Bid at Execution: {7:.2f}, Underlying Price at Execution: {8:.2f}, Timestamp: {5})".format(
-            self.type, self.sentiment, self.symbol, self.totalValue, self.totalSize, self.averagePrice,
-            self.askAtExecution, self.bidAtExecution, self.priceAtExecution, self.timestamp)
+        return "Unusual Activity (Contract: {0}, Type: {1}, Sentiment: {2}, Total Value: {3:.2f}, Total Size: {4}, Average Price: {5:.2f}, Ask at Execution: {6:.2f}, Bid at Execution: {7:.2f}, Underlying Price at Execution: {8:.2f}, Timestamp: {9})"\
+                .format(self.contract,
+                        self.activity_type,
+                        self.sentiment,
+                        self.total_value,
+                        self.total_size,
+                        self.average_price,
+                        self.ask_price_at_execution,
+                        self.bid_price_at_execution,
+                        self.underlying_price_at_execution,
+                        self.timestamp)
 
     def get_strike_price(self) -> float:
         return float(self.contract[(self.contract.index('_') + 8):])
