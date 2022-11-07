@@ -14,6 +14,10 @@ _SELF_HEAL_BACKOFFS = [10, 30, 60, 300, 600]
 _HEARTBEAT_INTERVAL = 20
 _HEARTBEAT_MESSAGE = ""
 _ERROR_RESPONSE = "\"status\":\"error\""
+_TRADE_MESSAGE_SIZE = 72  # 61 used + 11 pad
+_QUOTE_MESSAGE_SIZE = 52  # 48 used + 4 pad
+_REFRESH_MESSAGE_SIZE = 52  # 44 used + 8 pad
+_UNUSUAL_ACTIVITY_MESSAGE_SIZE = 74  # 62 used + 12 pad
 
 _stopFlag: threading.Event = threading.Event()
 _dataMsgLock: threading.Lock = threading.Lock()
@@ -388,6 +392,40 @@ def _heartbeat_fn(ws_lock: threading.Lock, web_socket: _WebSocket):
     _log.debug("Heartbeat stopped")
 
 
+def _get_seconds_from_epoch_from_ticks(ticks: int) -> float:
+    return float(ticks) / 1_000_000_000.0
+
+
+def _scale_number(value: int, scale_type: int) -> float:
+    match scale_type:
+        case 0x00:
+            return float(value)  # divided by 1
+        case 0x01:
+            return float(value) / 10.0
+        case 0x02:
+            return float(value) / 100.0
+        case 0x03:
+            return float(value) / 1_000.0
+        case 0x04:
+            return float(value) / 10_000.0
+        case 0x05:
+            return float(value) / 100_000.0
+        case 0x06:
+            return float(value) / 1_000_000.0
+        case 0x07:
+            return float(value) / 10_000_000.0
+        case 0x08:
+            return float(value) / 100_000_000.0
+        case 0x09:
+            return float(value) / 1_000_000_000.0
+        case 0x0A:
+            return float(value) / 512.0
+        case 0x0F:
+            return 0.0
+        case _:
+            return float(value)  # divided by 1
+
+
 def _thread_fn(index: int, data: queue.Queue,
                on_trade: Callable[[Trade], None],
                on_quote: Callable[[Quote], None] = None,
@@ -398,29 +436,42 @@ def _thread_fn(index: int, data: queue.Queue,
         try:
             datum: bytes = data.get(True, 1.0)
             count: int = datum[0]
-            startIndex: int = 1
+            start_index: int = 1
             for _ in range(count):
-                msg_type: int = datum[startIndex + 21]
-                if (msg_type == 1) or (msg_type == 2):
-                    message: bytes = datum[startIndex:(startIndex + 42)]
-                    symbol: str = message[0:21].decode('ascii')
-                    type: QuoteType = message[21]
-                    price: float = struct.unpack_from('<d', message, 22)[0]
-                    size: int = struct.unpack_from('<L', message, 30)[0]
-                    timestamp: float = struct.unpack_from('<d', message, 34)[0]
-                    if on_quote: on_quote(Quote(symbol, type, price, size, timestamp))
-                    startIndex = startIndex + 42
-                elif (msg_type == 0):
-                    message: bytes = datum[startIndex:(startIndex + 50)]
+                msg_type: int = datum[start_index + 22]
+                if msg_type == 1:  # Quote
+                    message: bytes = datum[start_index:(start_index + _QUOTE_MESSAGE_SIZE)]
+                    # byte structure:
+                    # 	contract length [0]
+                    # 	contract [1-21] utf-8 string
+                    # 	event type [22] uint8
+                    # 	price type [23] uint8
+                    # 	ask price [24-27] int32
+                    # 	ask size [28-31] uint32
+                    # 	bid price [32-35] int32
+                    # 	bid size [36-39] uint32
+                    # 	timestamp [40-47] uint64
+                    # https://docs.python.org/3/library/struct.html#format-characters
+                    contract: str = message[1:message[0]].decode('ascii')
+                    ask_price: float = _scale_number(struct.unpack_from('<i', message, 24)[0], message[23])
+                    ask_size: int = struct.unpack_from('<I', message, 28)[0]
+                    bid_price: float = _scale_number(struct.unpack_from('<i', message, 32)[0], message[23])
+                    bid_size: int = struct.unpack_from('<I', message, 36)[0]
+                    timestamp: float = _get_seconds_from_epoch_from_ticks(struct.unpack_from('<L', message, 34)[0])
+                    if on_quote:
+                        on_quote(Quote(contract, ask_price, ask_size, bid_price, bid_size, timestamp))
+                    start_index = start_index + _QUOTE_MESSAGE_SIZE
+                elif msg_type == 0:  # Trade
+                    message: bytes = datum[start_index:(start_index + _TRADE_MESSAGE_SIZE)]
                     symbol: str = message[0:21].decode('ascii')
                     price: float = struct.unpack_from('<d', message, 22)[0]
                     size: int = struct.unpack_from('<L', message, 30)[0]
                     timestamp: float = struct.unpack_from('<d', message, 34)[0]
                     totalVolume: int = struct.unpack_from('<Q', message, 42)[0]
                     on_trade(Trade(symbol, price, size, totalVolume, timestamp))
-                    startIndex = startIndex + 50
-                elif (msg_type > 3):
-                    message: bytes = datum[startIndex:(startIndex + 55)]
+                    start_index = start_index + _TRADE_MESSAGE_SIZE
+                elif msg_type > 2:  # Unusual Activity
+                    message: bytes = datum[start_index:(start_index + _UNUSUAL_ACTIVITY_MESSAGE_SIZE)]
                     symbol: str = message[0:21].decode('ascii')
                     type: UnusualActivityType = message[21]
                     sentiment: UnusualActivitySentiment = message[22]
@@ -434,14 +485,14 @@ def _thread_fn(index: int, data: queue.Queue,
                     if on_unusual_activity: on_unusual_activity(
                         UnusualActivity(symbol, type, sentiment, totalValue, totalSize, averagePrice, askAtExecution,
                                         bidAtExecution, priceAtExecution, timestamp))
-                    startIndex = startIndex + 55
-                elif (msg_type == 3):
-                    message: bytes = datum[startIndex:(startIndex + 34)]
+                    start_index = start_index + _UNUSUAL_ACTIVITY_MESSAGE_SIZE
+                elif msg_type == 2:  # Refresh
+                    message: bytes = datum[start_index:(start_index + _REFRESH_MESSAGE_SIZE)]
                     symbol: str = message[0:21].decode('ascii')
                     refresh: int = struct.unpack_from('<i', message, 22)[0]
                     timestamp: float = struct.unpack_from('<d', message, 26)[0]
                     if on_refresh: on_refresh(Refresh(symbol, refresh, timestamp))
-                    startIndex = startIndex + 34
+                    start_index = start_index + _REFRESH_MESSAGE_SIZE
                 else:
                     _log.warn("Invalid Message Type: {0}".format(msg_type))
         except queue.Empty:
@@ -613,12 +664,13 @@ class Client:
             if (not symbol in self.__channels):
                 self.__join(symbol)
 
-    def joinFirehose(self):
-        if ("$FIREHOSE" in self.__channels):
+    def join_firehose(self):
+        if "$FIREHOSE" in self.__channels:
             _log.warn("This client has already joined the firehose channel")
         else:
             if self.__isStarted:
-                while not self.__allReady(): time.sleep(1.0)
+                while not self.__allReady():
+                    time.sleep(1.0)
             self.__join("$FIREHOSE")
 
     def leave(self, *symbols):
@@ -631,25 +683,25 @@ class Client:
         for sym in symbolSet:
             self.__leave(sym)
 
-    def leaveFirehose(self):
-        if ("$FIREHOSE" in self.__channels):
+    def leave_firehose(self):
+        if "$FIREHOSE" in self.__channels:
             self.__leave("$FIREHOSE")
 
     def __socket_start_fn(self, token: str):
         _log.info("Websocket - Connecting...")
         ws_url: str = self.__getWebSocketUrl(token)
         self.__webSocket = _WebSocket(ws_url,
-                                    self.__wsLock,
-                                    self.__heartbeatThread,
-                                    self.__workerThreads,
-                                    self.__getChannels,
-                                    self.__getToken,
-                                    self.__getWebSocketUrl,
-                                    self.__useOnTrade,
-                                    self.__useOnQuote,
-                                    self.__useOnRefresh,
-                                    self.__useOnUnusualActivity,
-                                    self.__data)
+                                      self.__wsLock,
+                                      self.__heartbeatThread,
+                                      self.__workerThreads,
+                                      self.__getChannels,
+                                      self.__getToken,
+                                      self.__getWebSocketUrl,
+                                      self.__useOnTrade,
+                                      self.__useOnQuote,
+                                      self.__useOnRefresh,
+                                      self.__useOnUnusualActivity,
+                                      self.__data)
         self.__webSocket.start()
 
     def start(self):
@@ -666,7 +718,7 @@ class Client:
 
     def stop(self):
         _log.info("Stopping...")
-        if (len(self.__channels) > 0):
+        if len(self.__channels) > 0:
             self.leave()
         time.sleep(1.0)
         self.__wsLock.acquire()
@@ -683,5 +735,5 @@ class Client:
         _log.debug("Socket thread joined")
         _log.info("Stopped")
 
-    def getStats(self) -> tuple[int, int, int]:
-        return (_dataMsgCount, _txtMsgCount, self.__data.qsize())
+    def get_stats(self) -> tuple[int, int, int]:
+        return _dataMsgCount, _txtMsgCount, self.__data.qsize()

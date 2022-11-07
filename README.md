@@ -107,7 +107,7 @@ class Summarize(threading.Thread):
     def run(self):
         while (not self.__stop_flag.is_set()):
             time.sleep(10.0)
-            (dataMsgs, txtMsgs, queueDepth) = self.__client.getStats()
+            (dataMsgs, txtMsgs, queueDepth) = self.__client.get_stats()
             client.log(
                 "Client Stats - Data Messages: {0}, Text Messages: {1}, Queue Depth: {2}".format(dataMsgs, txtMsgs,
                                                                                                  queueDepth))
@@ -137,7 +137,7 @@ config: client.Config = client.Config(
 intrinioRealtimeOptionsClient: client.Client = client.Client(config, onTrade=on_trade)
 
 # Use this to subscribe to the entire univers of symbols (option contracts). This requires special permission.
-# intrinioRealtimeOptionsClient.joinFirehose()
+# intrinioRealtimeOptionsClient.join_firehose()
 
 # Use this to subscribe, dynamically, to an option chain (all option contracts for a given underlying contract).
 # intrinioRealtimeOptionsClient.join("AAPL")
@@ -295,7 +295,7 @@ The first thing that you'll do is create a new `Client` object, passing in a ser
 After a `Client` object has been created, you may subscribe to receive feed updates from the server.
 You may subscribe to static list of symbols (a mixed list of option contracts and/or option chains). 
 Or, you may subscribe, dynamically, to option contracts, option chains, or a mixed list thereof.
-It is also possible to subscribe to the entire universe of option contracts by switching the `Provider` to "OPRA_FIREHOSE" (in the config object) and calling `joinFirehose`.
+It is also possible to subscribe to the entire universe of option contracts by switching the `Provider` to "OPRA_FIREHOSE" (in the config object) and calling `join_firehose`.
 The volume of data provided by the `Firehose` exceeds 100Mbps and requires special authorization.
 After subscribing, using your starting list of symbols, you will call the `start` method. The client will immediately attempt to authorize your API key (provided in the config object). If authoriztion is successful, the necessary connection(s) will be opened.
 If you are using the non-firehose feed, you may update your subscriptions on the fly, using the `join` and `leave` methods.
@@ -322,13 +322,13 @@ If you wish to perform a graceful shutdown of the application, please call the `
 
 `client.join()` - Joins channel(s) configured in config.json.
 `client.join(*channels)` - Joins the provided channel or channels. E.g. "AAPL", "GOOG__210917C01040000"
-`client.joinFirehose()` - Joins the firehose channel. This requires special account permissions.
+`client.join_firehose()` - Joins the firehose channel. This requires special account permissions.
 
 ---------
 
 `client.leave()` - Leaves all joined channels/subscriptions, including firehose.
 `client.leave(*channels)` - Leaves the specified channel or channels. E.g. "AAPL" or "GOOG__210917C01040000"
-`client.leaveFirehose()` Leaves the firehose channel 
+`client.leave_firehose()` Leaves the firehose channel 
 
 ---------
 `client.stop();` - Stops the Intrinio Realtime WebSocket Client. This method will leave all joined channels, stop all threads, and gracefully close the websocket connection(s).

@@ -85,7 +85,7 @@ class Summarize(threading.Thread):
     def run(self):
         while not self.__stop_flag.is_set():
             time.sleep(10.0)
-            (dataMsgs, txtMsgs, queueDepth) = self.__client.getStats()
+            (dataMsgs, txtMsgs, queueDepth) = self.__client.get_stats()
             client.log("Client Stats - Data Messages: {0}, Text Messages: {1}, Queue Depth: {2}".format(dataMsgs, txtMsgs, queueDepth))
             client.log(
                 "App Stats - Trades: {0}, Asks: {1}, Bids: {2}, Refreshes: {3}, Blocks: {4}, Sweeps: {5}, Large Trades: {6}, Goldens: {7}"
@@ -114,7 +114,7 @@ config: client.Config = client.Config(
 intrinioRealtimeOptionsClient: client.Client = client.Client(config, onTrade=on_trade, onQuote=on_quote, onRefresh=on_refresh, onUnusualActivity=on_unusual_activity)
 
 # Use this to subscribe to the entire universe of symbols (option contracts). This requires special permission.
-# intrinioRealtimeOptionsClient.joinFirehose()
+# intrinioRealtimeOptionsClient.join_firehose()
 
 # Use this to subscribe, dynamically, to an option chain (all option contracts for a given underlying contract).
 # intrinioRealtimeOptionsClient.join("AAPL")
