@@ -13,7 +13,6 @@ from enum import IntEnum, unique
 _SELF_HEAL_BACKOFFS = [10, 30, 60, 300, 600]
 _HEARTBEAT_INTERVAL = 20
 _EMPTY_STRING = ""
-_ERROR_RESPONSE = "\"status\":\"error\""
 _TRADE_MESSAGE_SIZE = 72  # 61 used + 11 pad
 _QUOTE_MESSAGE_SIZE = 52  # 48 used + 4 pad
 _REFRESH_MESSAGE_SIZE = 52  # 44 used + 8 pad
@@ -235,105 +234,108 @@ class UnusualActivity:
         return self.contract[0:self.contract.index('_')].trim()
 
 
+def _get_option_mask(use_on_trade: bool, use_on_quote: bool, use_on_refresh: bool, use_on_unusual_activity: bool) -> int:
+    mask: int = 0
+    if use_on_trade:
+        mask |= 0b0001
+    if use_on_quote:
+        mask |= 0b0010
+    if use_on_refresh:
+        mask |= 0b0100
+    if use_on_unusual_activity:
+        mask |= 0b1000
+    return mask
+
+
 class _WebSocket(websocket.WebSocketApp):
     def __init__(self,
-                 wsUrl: str,
-                 wsLock: threading.Lock,
-                 hearbeatThread: threading.Thread,
-                 workerThreads: list[threading.Thread],
-                 getChannels: Callable[[None], set[tuple[str, bool]]],
-                 getToken: Callable[[None], str],
-                 getUrl: Callable[[str], str],
-                 useOnTrade: bool,
-                 useOnQuote: bool,
-                 useOnOI: bool,
-                 useOnUA: bool,
-                 dataQueue: queue.Queue):
-        super().__init__(wsUrl, on_open=self.__onOpen, on_close=self.__onClose, on_data=self.__onData, on_error=self.__onError)
-        self.__wsLock: threading.Lock = wsLock
-        self.__heartbeatThread: threading.Thread = hearbeatThread
-        self.__workerThreads: list[threading.Thread] = workerThreads
-        self.__getChannels: Callable[[None], set[tuple[str, bool]]] = getChannels
-        self.__getToken: Callable[[None], str] = getToken
-        self.__getUrl: Callable[[str], str] = getUrl
-        self.__useOnTrade: bool = useOnTrade
-        self.__useOnQuote: bool = useOnQuote
-        self.__useOnOI: bool = useOnOI
-        self.__useOnUA: bool = useOnUA
-        self.__dataQueue: queue.Queue = dataQueue
-        self.__isReconnecting: bool = False
-        self.__lastReset: float = time.time()
+                 ws_url: str,
+                 ws_lock: threading.Lock,
+                 heartbeat_thread: threading.Thread,
+                 worker_threads: list[threading.Thread],
+                 get_channels: Callable[[None], set[tuple[str, bool]]],
+                 get_token: Callable[[None], str],
+                 get_url: Callable[[str], str],
+                 use_on_trade: bool,
+                 use_on_quote: bool,
+                 use_on_refresh: bool,
+                 use_on_ua: bool,
+                 data_queue: queue.Queue):
+        super().__init__(ws_url, on_open=self.__on_open, on_close=self.__on_close, on_data=self.__on_data, on_error=self.__on_error)
+        self.__wsLock: threading.Lock = ws_lock
+        self.__heartbeat_thread: threading.Thread = heartbeat_thread
+        self.__worker_threads: list[threading.Thread] = worker_threads
+        self.__get_channels: Callable[[None], set[tuple[str, bool]]] = get_channels
+        self.__get_token: Callable[[None], str] = get_token
+        self.__get_url: Callable[[str], str] = get_url
+        self.__use_on_trade: bool = use_on_trade
+        self.__use_on_quote: bool = use_on_quote
+        self.__use_on_refresh: bool = use_on_refresh
+        self.__use_on_ua: bool = use_on_ua
+        self.__data_queue: queue.Queue = data_queue
+        self.__is_reconnecting: bool = False
+        self.__last_reset: float = time.time()
         self.isReady: bool = False
 
-    def __onOpen(self, ws):
+    def __on_open(self, ws):
         _log.info("Websocket - Connected")
         self.__wsLock.acquire()
         try:
             self.isReady = True
-            self.__isReconnecting = False
-            if not self.__heartbeatThread.is_alive():
-                self.__heartbeatThread.start()
-            for worker in self.__workerThreads:
-                if (not worker.is_alive()):
+            self.__is_reconnecting = False
+            if not self.__heartbeat_thread.is_alive():
+                self.__heartbeat_thread.start()
+            for worker in self.__worker_threads:
+                if not worker.is_alive():
                     worker.start()
         finally:
             self.__wsLock.release()
-        if self.__getChannels and callable(self.__getChannels):
-            channels: set[str] = self.__getChannels()
+        if self.__get_channels and callable(self.__get_channels):
+            channels: set[str] = self.__get_channels()
             if channels and (len(channels) > 0):
                 for symbol in channels:
-                    subscriptionSelection: str = ""
-                    subscriptionList: list[str] = list()
-                    if (self.__useOnTrade):
-                        subscriptionSelection += ",\"trade_data\":\"true\""
-                        subscriptionList.append("trade")
-                    if (self.__useOnQuote):
-                        subscriptionSelection += ",\"quote_data\":\"true\""
-                        subscriptionList.append("quote")
-                    if (self.__useOnOI):
-                        subscriptionSelection += ",\"open_interest_data\":\"true\""
-                        subscriptionList.append("open interest")
-                    if (self.__useOnUA):
-                        subscriptionSelection += ",\"unusual_activity_data\":\"true\""
-                        subscriptionList.append("unusual activity")
-                    message: str = "{\"topic\":\"options:" + symbol + "\",\"event\":\"phx_join\"" + subscriptionSelection + ",\"payload\":{},\"ref\":null}"
-                    subscriptionSelection = ", ".join(subscriptionList)
-                    _log.info("Websocket - Joining channel: {0} (subscriptions = {1})".format(symbol, subscriptionSelection))
-                    super().send(message, websocket.ABNF.OPCODE_TEXT)
+                    symbol_bytes = bytes(symbol, 'utf-8')
+                    message: bytes = bytearray(len(symbol_bytes) + 2)
+                    message[0] = 74  # join code
+                    message[1] = _get_option_mask(self.__use_on_trade, self.__use_on_quote, self.__use_on_refresh, self.__use_on_ua)
+                    message[2:] = symbol_bytes
+                    if self.isReady:
+                        _log.info("Websocket - Joining channel: {0}".format(symbol))
+                        self.send_binary(message)
 
-    def __tryReconnect(self) -> bool:
+    def __try_reconnect(self) -> bool:
         _log.info("Websocket - Reconnecting...")
         if self.isReady:
             return True
         else:
             with self.__wsLock:
-                self.__isReconnecting = True
-            if (time.time() - self.__lastReset > (60 * 60 * 24 * 5)):
-                token: str = self.__getToken()
-                super().url = self.__getUrl(token)
+                self.__is_reconnecting = True
+            if (time.time() - self.__last_reset > (60 * 60 * 24 * 5)):
+                token: str = self.__get_token()
+                super().url = self.__get_url(token)
             self.start()
             return False
 
-    def __onClose(self, ws, closeStatusCode, closeMsg):
+    def __on_close(self, ws, closeStatusCode, closeMsg):
         self.__wsLock.acquire()
         try:
-            if (not self.__isReconnecting):
+            if (not self.__is_reconnecting):
                 _log.info("Websocket - Closed - {0}: {1}".format(closeStatusCode, closeMsg))
                 self.isReady = False
                 if (not _stopFlag.is_set()):
-                    do_backoff(self.__tryReconnect)
+                    do_backoff(self.__try_reconnect)
         finally:
             self.__wsLock.release()
 
-    def __onError(self, ws, error):
+    def __on_error(self, ws, error):
         _log.error("Websocket - Error - {0}".format(error))
 
-    def __onData(self, ws, data, type, continueFlag):
-        if (type == websocket.ABNF.OPCODE_BINARY):
+    def __on_data(self, ws, data, type, continueFlag):
+        if type == websocket.ABNF.OPCODE_BINARY:
             with _dataMsgLock:
                 global _dataMsgCount
                 _dataMsgCount += 1
-            self.__dataQueue.put_nowait(data)
+            self.__data_queue.put_nowait(data)
         else:
             _log.debug("Websocket - Message received")
             with _txtMsgLock:
@@ -341,10 +343,8 @@ class _WebSocket(websocket.WebSocketApp):
                 _txtMsgCount += 1
             if data == _EMPTY_STRING:
                 _log.debug("Heartbeat response received")
-            elif _ERROR_RESPONSE in data:
-                json_doc = json.loads(data)
-                error_msg = json_doc["payload"]["response"]
-                _log.error("Error received: {0}".format(error_msg))
+            else:
+                _log.error("Error received: {0}".format(data))
 
     def start(self):
         super().run_forever(skip_utf8_validation=True)
@@ -353,7 +353,7 @@ class _WebSocket(websocket.WebSocketApp):
     def stop(self):
         super().close()
 
-    def sendHeartbeat(self):
+    def send_heartbeat(self):
         if self.isReady:
             super().send(_EMPTY_STRING, websocket.ABNF.OPCODE_TEXT)
 
@@ -364,7 +364,7 @@ class _WebSocket(websocket.WebSocketApp):
         super().send(message, websocket.ABNF.OPCODE_BINARY)
 
     def reset(self):
-        self.lastReset = time.time()
+        self.__last_reset = time.time()
 
 
 class Config:
@@ -385,8 +385,8 @@ def _heartbeat_fn(ws_lock: threading.Lock, web_socket: _WebSocket):
         _log.debug("Sending heartbeat")
         ws_lock.acquire()
         try:
-            if not _stopFlag.is_set():
-                web_socket.sendHeartbeat()
+            if web_socket and not _stopFlag.is_set():
+                web_socket.send_heartbeat()
         finally:
             ws_lock.release()
     _log.debug("Heartbeat stopped")
@@ -397,33 +397,59 @@ def _get_seconds_from_epoch_from_ticks(ticks: int) -> float:
 
 
 def _scale_number(value: int, scale_type: int) -> float:
-    match scale_type:
-        case 0x00:
-            return float(value)  # divided by 1
-        case 0x01:
-            return float(value) / 10.0
-        case 0x02:
-            return float(value) / 100.0
-        case 0x03:
-            return float(value) / 1_000.0
-        case 0x04:
-            return float(value) / 10_000.0
-        case 0x05:
-            return float(value) / 100_000.0
-        case 0x06:
-            return float(value) / 1_000_000.0
-        case 0x07:
-            return float(value) / 10_000_000.0
-        case 0x08:
-            return float(value) / 100_000_000.0
-        case 0x09:
-            return float(value) / 1_000_000_000.0
-        case 0x0A:
-            return float(value) / 512.0
-        case 0x0F:
-            return 0.0
-        case _:
-            return float(value)  # divided by 1
+    if scale_type == 0x00:
+        return float(value)  # divided by 1
+    elif scale_type == 0x01:
+        return float(value) / 10.0
+    elif scale_type == 0x02:
+        return float(value) / 100.0
+    elif scale_type == 0x03:
+        return float(value) / 1_000.0
+    elif scale_type == 0x04:
+        return float(value) / 10_000.0
+    elif scale_type == 0x05:
+        return float(value) / 100_000.0
+    elif scale_type == 0x06:
+        return float(value) / 1_000_000.0
+    elif scale_type == 0x07:
+        return float(value) / 10_000_000.0
+    elif scale_type == 0x08:
+        return float(value) / 100_000_000.0
+    elif scale_type == 0x09:
+        return float(value) / 1_000_000_000.0
+    elif scale_type == 0x0A:
+        return float(value) / 512.0
+    elif scale_type == 0x0F:
+        return 0.0
+    else:
+        return float(value)  # divided by 1
+    # match scale_type:
+    #     case 0x00:
+    #         return float(value)  # divided by 1
+    #     case 0x01:
+    #         return float(value) / 10.0
+    #     case 0x02:
+    #         return float(value) / 100.0
+    #     case 0x03:
+    #         return float(value) / 1_000.0
+    #     case 0x04:
+    #         return float(value) / 10_000.0
+    #     case 0x05:
+    #         return float(value) / 100_000.0
+    #     case 0x06:
+    #         return float(value) / 1_000_000.0
+    #     case 0x07:
+    #         return float(value) / 10_000_000.0
+    #     case 0x08:
+    #         return float(value) / 100_000_000.0
+    #     case 0x09:
+    #         return float(value) / 1_000_000_000.0
+    #     case 0x0A:
+    #         return float(value) / 512.0
+    #     case 0x0F:
+    #         return 0.0
+    #     case _:
+    #         return float(value)  # divided by 1
 
 
 def _thread_fn(index: int, data: queue.Queue,
@@ -547,9 +573,9 @@ def _thread_fn(index: int, data: queue.Queue,
 
 
 class Client:
-    def __init__(self, config: Config, onTrade: Callable[[Trade], None], onQuote: Callable[[Quote], None] = None,
-                 onRefresh: Callable[[Refresh], None] = None,
-                 onUnusualActivity: Callable[[UnusualActivity], None] = None):
+    def __init__(self, config: Config, on_trade: Callable[[Trade], None], on_quote: Callable[[Quote], None] = None,
+                 on_refresh: Callable[[Refresh], None] = None,
+                 on_unusual_activity: Callable[[UnusualActivity], None] = None):
         if not config:
             raise ValueError("Config is required")
         if (not config.apiKey) or (not isinstance(config.apiKey, str)):
@@ -559,34 +585,34 @@ class Client:
         if ((config.provider == Providers.MANUAL) or (config.provider == Providers.MANUAL_FIREHOSE)) and (
                 (not config.manualIpAddress) or (not isinstance(config.manualIpAddress, str))):
             raise ValueError("You must specify an IP address for a manual configuration")
-        if (onTrade):
-            if (callable(onTrade)):
-                self.__useOnTrade: bool = True
+        if on_trade:
+            if callable(on_trade):
+                self.__use_on_trade: bool = True
             else:
                 raise ValueError("Parameter 'on_trade' must be a function")
         else:
-            self.__useOnTrade: bool = False
-        if (onQuote):
-            if (callable(onQuote)):
-                self.__useOnQuote: bool = True
+            self.__use_on_trade: bool = False
+        if on_quote:
+            if callable(on_quote):
+                self.__use_on_quote: bool = True
             else:
                 raise ValueError("Parameter 'on_quote' must be a function")
         else:
-            self.__useOnQuote: bool = False
-        if (onRefresh):
-            if (callable(onRefresh)):
-                self.__useOnRefresh: bool = True
+            self.__use_on_quote: bool = False
+        if on_refresh:
+            if callable(on_refresh):
+                self.__use_on_refresh: bool = True
             else:
                 raise ValueError("Parameter 'on_refresh' must be a function")
         else:
-            self.__useOnRefresh: bool = False
-        if (onUnusualActivity):
-            if (callable(onUnusualActivity)):
-                self.__useOnUnusualActivity: bool = True
+            self.__use_on_refresh: bool = False
+        if on_unusual_activity:
+            if callable(on_unusual_activity):
+                self.__use_on_unusual_activity: bool = True
             else:
                 raise ValueError("Parameter 'on_unusual_activity' must be a function")
         else:
-            self.__useOnUnusualActivity: bool = False
+            self.__use_on_unusual_activity: bool = False
         self.__provider: Providers = config.provider
         self.__apiKey: str = config.apiKey
         self.__manualIP: str = config.manualIpAddress
@@ -597,29 +623,29 @@ class Client:
         else:
             self.__channels: set[str] = set()
         self.__data: queue.Queue = queue.Queue()
-        self.__tLock: threading.Lock = threading.Lock()
-        self.__wsLock: threading.Lock = threading.Lock()
-        self.__heartbeatThread: threading.Thread = threading.Thread(None, _heartbeat_fn,
-                                                                    args=[self.__wsLock, self.__webSocket],
-                                                                    daemon=True)
-        self.__workerThreads: list[threading.Thread] = [threading.Thread(None, _thread_fn,
-                                                                         args=[i, self.__data, onTrade, onQuote,
-                                                                               onRefresh, onUnusualActivity],
-                                                                         daemon=True) for i in range(config.numThreads)]
-        self.__socketThread: threading.Thread = None
-        self.__isStarted: bool = False
+        self.__t_lock: threading.Lock = threading.Lock()
+        self.__ws_lock: threading.Lock = threading.Lock()
+        self.__heartbeat_thread: threading.Thread = threading.Thread(None, _heartbeat_fn,
+                                                                     args=[self.__ws_lock, self.__webSocket],
+                                                                     daemon=True)
+        self.__worker_threads: list[threading.Thread] = [threading.Thread(None,
+                                                                          _thread_fn,
+                                                                          args=[i, self.__data, on_trade, on_quote, on_refresh, on_unusual_activity],
+                                                                          daemon=True) for i in range(config.numThreads)]
+        self.__socket_thread: threading.Thread = None
+        self.__is_started: bool = False
         _log.setLevel(config.logLevel)
 
-    def __allReady(self) -> bool:
-        self.__wsLock.acquire()
+    def __all_ready(self) -> bool:
+        self.__ws_lock.acquire()
         ready: bool = True
         try:
             ready = self.__webSocket.isReady
         finally:
-            self.__wsLock.release()
+            self.__ws_lock.release()
         return ready
 
-    def __getAuthUrl(self) -> str:
+    def __get_auth_url(self) -> str:
         if self.__provider == Providers.OPRA:
             return "https://realtime-options.intrinio.com/auth?api_key=" + self.__apiKey
         elif self.__provider == Providers.MANUAL:
@@ -627,7 +653,7 @@ class Client:
         else:
             raise ValueError("Provider not specified")
 
-    def __getWebSocketUrl(self, token: str) -> str:
+    def __get_web_socket_url(self, token: str) -> str:
         if self.__provider == Providers.OPRA:
             return "wss://realtime-options.intrinio.com/socket/websocket?vsn=1.0.0&token=" + token
         elif self.__provider == Providers.MANUAL:
@@ -635,11 +661,11 @@ class Client:
         else:
             raise ValueError("Provider not specified")
 
-    def __trySetToken(self) -> bool:
+    def __try_set_token(self) -> bool:
         _log.info("Authorizing...")
-        headers = {"Client-Information": "IntrinioOptionsPythonSDKv1.0"}
+        headers = {"Client-Information": "IntrinioOptionsPythonSDKv2.0"}
         try:
-            response: requests.Response = requests.get(self.__getAuthUrl(), headers=headers, timeout=1)
+            response: requests.Response = requests.get(self.__get_auth_url(), headers=headers, timeout=1)
             if response.status_code != 200:
                 _log.error(
                     "Authorization Failure (status code = {0}): The authorization key you provided is likely incorrect.".format(
@@ -655,29 +681,17 @@ class Client:
             _log.error("Authorization Failure: {0}".format(err))
             return False
 
-    def __getToken(self) -> str:
-        self.__tLock.acquire()
+    def __get_token(self) -> str:
+        self.__t_lock.acquire()
         try:
             if ((time.time() - self.__token[1]) > (60 * 60 * 24)):  # 60sec/min * 60min/hr * 24hrs = 1 day
-                do_backoff(self.__trySetToken)
+                do_backoff(self.__try_set_token)
             return self.__token[0]
         finally:
-            self.__tLock.release()
+            self.__t_lock.release()
 
-    def __getChannels(self) -> set[str]:
+    def __get_channels(self) -> set[str]:
         return self.__channels
-
-    def __get_option_mask(self) -> int:
-        mask: int = 0
-        if self.__useOnTrade:
-            mask |= 0b0001
-        if self.__useOnQuote:
-            mask |= 0b0010
-        if self.__useOnRefresh:
-            mask |= 0b0100
-        if self.__useOnUnusualActivity:
-            mask |= 0b1000
-        return mask
 
     def __join(self, symbol: str):
         if symbol not in self.__channels:
@@ -685,7 +699,7 @@ class Client:
             symbol_bytes = bytes(symbol, 'utf-8')
             message: bytes = bytearray(len(symbol_bytes)+2)
             message[0] = 74  # join code
-            message[1] = self.__get_option_mask()
+            message[1] = _get_option_mask(self.__use_on_trade, self.__use_on_quote, self.__use_on_refresh, self.__use_on_unusual_activity)
             message[2:] = symbol_bytes
             if self.__webSocket.isReady:
                 _log.info("Websocket - Joining channel: {0}".format(symbol))
@@ -697,25 +711,26 @@ class Client:
             symbol_bytes = bytes(symbol, 'utf-8')
             message: bytes = bytearray(len(symbol_bytes) + 2)
             message[0] = 76  # leave code
-            message[1] = self.__get_option_mask()
+            message[1] = _get_option_mask(self.__use_on_trade, self.__use_on_quote, self.__use_on_refresh, self.__use_on_unusual_activity)
             message[2:] = symbol_bytes
             if self.__webSocket.isReady:
                 _log.info("Websocket - Leaving channel: {0}".format(symbol))
                 self.__webSocket.send_binary(message)
 
     def join(self, *symbols):
-        if self.__isStarted:
-            while not self.__allReady(): time.sleep(1.0)
+        if self.__is_started:
+            while not self.__all_ready():
+                time.sleep(1.0)
         for (symbol) in symbols:
-            if (not symbol in self.__channels):
+            if symbol not in self.__channels:
                 self.__join(symbol)
 
     def join_firehose(self):
         if "$FIREHOSE" in self.__channels:
             _log.warn("This client has already joined the firehose channel")
         else:
-            if self.__isStarted:
-                while not self.__allReady():
+            if self.__is_started:
+                while not self.__all_ready():
                     time.sleep(1.0)
             self.__join("$FIREHOSE")
 
@@ -725,8 +740,8 @@ class Client:
             channels: set[str] = self.__channels.copy()
             for (symbol) in channels:
                 self.__leave(symbol)
-        symbolSet: set[str] = set(symbols)
-        for sym in symbolSet:
+        symbol_set: set[str] = set(symbols)
+        for sym in symbol_set:
             self.__leave(sym)
 
     def leave_firehose(self):
@@ -735,49 +750,49 @@ class Client:
 
     def __socket_start_fn(self, token: str):
         _log.info("Websocket - Connecting...")
-        ws_url: str = self.__getWebSocketUrl(token)
+        ws_url: str = self.__get_web_socket_url(token)
         self.__webSocket = _WebSocket(ws_url,
-                                      self.__wsLock,
-                                      self.__heartbeatThread,
-                                      self.__workerThreads,
-                                      self.__getChannels,
-                                      self.__getToken,
-                                      self.__getWebSocketUrl,
-                                      self.__useOnTrade,
-                                      self.__useOnQuote,
-                                      self.__useOnRefresh,
-                                      self.__useOnUnusualActivity,
+                                      self.__ws_lock,
+                                      self.__heartbeat_thread,
+                                      self.__worker_threads,
+                                      self.__get_channels,
+                                      self.__get_token,
+                                      self.__get_web_socket_url,
+                                      self.__use_on_trade,
+                                      self.__use_on_quote,
+                                      self.__use_on_refresh,
+                                      self.__use_on_unusual_activity,
                                       self.__data)
         self.__webSocket.start()
 
     def start(self):
-        if (not (self.__useOnTrade or self.__useOnQuote or self.__useOnRefresh or self.__useOnUnusualActivity)):
+        if (not (self.__use_on_trade or self.__use_on_quote or self.__use_on_refresh or self.__use_on_unusual_activity)):
             raise ValueError("You must set at least one callback method before starting client")
-        token: str = self.__getToken()
-        self.__wsLock.acquire()
+        token: str = self.__get_token()
+        self.__ws_lock.acquire()
         try:
-            self.__socketThread = threading.Thread = threading.Thread(None, self.__socket_start_fn, args=[token], daemon=True)
+            self.__socket_thread = threading.Thread = threading.Thread(None, self.__socket_start_fn, args=[token], daemon=True)
         finally:
-            self.__wsLock.release()
-        self.__socketThread.start()
-        self.__isStarted = True
+            self.__ws_lock.release()
+        self.__socket_thread.start()
+        self.__is_started = True
 
     def stop(self):
         _log.info("Stopping...")
         if len(self.__channels) > 0:
             self.leave()
         time.sleep(1.0)
-        self.__wsLock.acquire()
+        self.__ws_lock.acquire()
         try:
             self.__webSocket.isReady = False
         finally:
-            self.__wsLock.release()
+            self.__ws_lock.release()
         _stopFlag.set()
         self.__webSocket.stop()
-        for i in range(len(self.__workerThreads)):
-            self.__workerThreads[i].join()
+        for i in range(len(self.__worker_threads)):
+            self.__worker_threads[i].join()
             _log.debug("Worker thread {0} joined".format(i))
-        self.__socketThread.join()
+        self.__socket_thread.join()
         _log.debug("Socket thread joined")
         _log.info("Stopped")
 

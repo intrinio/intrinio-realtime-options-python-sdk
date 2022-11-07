@@ -94,14 +94,14 @@ class Summarize(threading.Thread):
 config: client.Config = client.Config(
     apiKey="",
     provider=client.Providers.OPRA,
-    numThreads=2,
+    numThreads=8,
     symbols=["AAPL"],
     # this is a static list of symbols (options contracts or option chains) that will automatically be subscribed to when the client starts
     logLevel=client.LogLevel.INFO)
 
 # Register only the callbacks that you want.
 # Take special care when registering the 'on_quote' handler as it will increase throughput by ~10x
-intrinioRealtimeOptionsClient: client.Client = client.Client(config, onTrade=on_trade, onQuote=on_quote, onRefresh=on_refresh, onUnusualActivity=on_unusual_activity)
+intrinioRealtimeOptionsClient: client.Client = client.Client(config, on_trade=on_trade, on_quote=on_quote, on_refresh=on_refresh, on_unusual_activity=on_unusual_activity)
 
 # Use this to subscribe to the entire universe of symbols (option contracts). This requires special permission.
 # intrinioRealtimeOptionsClient.join_firehose()
