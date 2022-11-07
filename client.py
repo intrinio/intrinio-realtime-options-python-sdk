@@ -12,7 +12,7 @@ from enum import IntEnum, unique
 
 _SELF_HEAL_BACKOFFS = [10, 30, 60, 300, 600]
 _HEARTBEAT_INTERVAL = 20
-_HEARTBEAT_MESSAGE = ""
+_EMPTY_STRING = ""
 _ERROR_RESPONSE = "\"status\":\"error\""
 _TRADE_MESSAGE_SIZE = 72  # 61 used + 11 pad
 _QUOTE_MESSAGE_SIZE = 52  # 48 used + 4 pad
@@ -339,12 +339,12 @@ class _WebSocket(websocket.WebSocketApp):
             with _txtMsgLock:
                 global _txtMsgCount
                 _txtMsgCount += 1
-            if (data == _HEARTBEAT_RESPONSE):
-                _log.debug("Heartbeat resonse received")
-            elif (_ERROR_RESPONSE in data):
-                jsonDoc = json.loads(data)
-                errorMsg = jsonDoc["payload"]["response"]
-                _log.error("Error received: {0}".format(errorMsg))
+            if data == _EMPTY_STRING:
+                _log.debug("Heartbeat response received")
+            elif _ERROR_RESPONSE in data:
+                json_doc = json.loads(data)
+                error_msg = json_doc["payload"]["response"]
+                _log.error("Error received: {0}".format(error_msg))
 
     def start(self):
         super().run_forever(skip_utf8_validation=True)
@@ -355,7 +355,7 @@ class _WebSocket(websocket.WebSocketApp):
 
     def sendHeartbeat(self):
         if self.isReady:
-            super().send(_HEARTBEAT_MESSAGE, websocket.ABNF.OPCODE_TEXT)
+            super().send(_EMPTY_STRING, websocket.ABNF.OPCODE_TEXT)
 
     def send(self, message: str):
         super().send(message, websocket.ABNF.OPCODE_TEXT)
@@ -453,45 +453,91 @@ def _thread_fn(index: int, data: queue.Queue,
                     # 	timestamp [40-47] uint64
                     # https://docs.python.org/3/library/struct.html#format-characters
                     contract: str = message[1:message[0]].decode('ascii')
-                    ask_price: float = _scale_number(struct.unpack_from('<i', message, 24)[0], message[23])
-                    ask_size: int = struct.unpack_from('<I', message, 28)[0]
-                    bid_price: float = _scale_number(struct.unpack_from('<i', message, 32)[0], message[23])
-                    bid_size: int = struct.unpack_from('<I', message, 36)[0]
-                    timestamp: float = _get_seconds_from_epoch_from_ticks(struct.unpack_from('<L', message, 34)[0])
+                    ask_price: float = _scale_number(struct.unpack_from('<l', message, 24)[0], message[23])
+                    ask_size: int = struct.unpack_from('<L', message, 28)[0]
+                    bid_price: float = _scale_number(struct.unpack_from('<l', message, 32)[0], message[23])
+                    bid_size: int = struct.unpack_from('<L', message, 36)[0]
+                    timestamp: float = _get_seconds_from_epoch_from_ticks(struct.unpack_from('<Q', message, 34)[0])
                     if on_quote:
                         on_quote(Quote(contract, ask_price, ask_size, bid_price, bid_size, timestamp))
                     start_index = start_index + _QUOTE_MESSAGE_SIZE
                 elif msg_type == 0:  # Trade
                     message: bytes = datum[start_index:(start_index + _TRADE_MESSAGE_SIZE)]
-                    symbol: str = message[0:21].decode('ascii')
-                    price: float = struct.unpack_from('<d', message, 22)[0]
-                    size: int = struct.unpack_from('<L', message, 30)[0]
-                    timestamp: float = struct.unpack_from('<d', message, 34)[0]
-                    totalVolume: int = struct.unpack_from('<Q', message, 42)[0]
-                    on_trade(Trade(symbol, price, size, totalVolume, timestamp))
+                    #  byte structure:
+                    #  contract length [0] uint8
+                    #  contract [1-21] utf-8 string
+                    #  event type [22] uint8
+                    #  price type [23] uint8
+                    #  underlying price type [24] uint8
+                    #  price [25-28] int32
+                    #  size [29-32] uint32
+                    #  timestamp [33-40] uint64
+                    #  total volume [41-48] uint64
+                    #  ask price at execution [49-52] int32
+                    #  bid price at execution [53-56] int32
+                    #  underlying price at execution [57-60] int32
+                    # https://docs.python.org/3/library/struct.html#format-characters
+                    contract: str = message[1:message[0]].decode('ascii')
+                    price: float = _scale_number(struct.unpack_from('<l', message, 25)[0], message[23])
+                    size: int = struct.unpack_from('<L', message, 29)[0]
+                    timestamp: float = _get_seconds_from_epoch_from_ticks(struct.unpack_from('<Q', message, 33)[0])
+                    total_volume: int = struct.unpack_from('<Q', message, 41)[0]
+                    ask_price_at_execution: int = _scale_number(struct.unpack_from('<l', message, 49)[0], message[23])
+                    bid_price_at_execution: int = _scale_number(struct.unpack_from('<l', message, 53)[0], message[23])
+                    underlying_price_at_execution: int = _scale_number(struct.unpack_from('<l', message, 57)[0], message[24])
+                    if on_trade:
+                        on_trade(Trade(contract, price, size, timestamp, total_volume, ask_price_at_execution, bid_price_at_execution, underlying_price_at_execution))
                     start_index = start_index + _TRADE_MESSAGE_SIZE
                 elif msg_type > 2:  # Unusual Activity
                     message: bytes = datum[start_index:(start_index + _UNUSUAL_ACTIVITY_MESSAGE_SIZE)]
-                    symbol: str = message[0:21].decode('ascii')
-                    type: UnusualActivityType = message[21]
-                    sentiment: UnusualActivitySentiment = message[22]
-                    totalValue: float = struct.unpack_from('<f', message, 23)[0]
-                    totalSize: int = struct.unpack_from('<L', message, 27)[0]
-                    averagePrice: float = struct.unpack_from('<f', message, 31)[0]
-                    askAtExecution: float = struct.unpack_from('<f', message, 35)[0]
-                    bidAtExecution: float = struct.unpack_from('<f', message, 39)[0]
-                    priceAtExecution: float = struct.unpack_from('<f', message, 43)[0]
-                    timestamp: float = struct.unpack_from('<d', message, 47)[0]
-                    if on_unusual_activity: on_unusual_activity(
-                        UnusualActivity(symbol, type, sentiment, totalValue, totalSize, averagePrice, askAtExecution,
-                                        bidAtExecution, priceAtExecution, timestamp))
+                    # byte structure:
+                    # contract length [0] uint8
+                    # contract [1-21] utf-8 string
+                    # event type [22] uint8
+                    # sentiment type [23] uint8
+                    # price type [24] uint8
+                    # underlying price type [25] uint8
+                    # total value [26-33] uint64
+                    # total size [34-37] uint32
+                    # average price [38-41] int32
+                    # ask price at execution [42-45] int32
+                    # bid price at execution [46-49] int32
+                    # underlying price at execution [50-53] int32
+                    # timestamp [54-61] uint64
+                    # https://docs.python.org/3/library/struct.html#format-characters
+                    contract: str = message[1:message[0]].decode('ascii')
+                    activity_type: UnusualActivityType = message[22]
+                    sentiment: UnusualActivitySentiment = message[23]
+                    total_value: float = _scale_number(struct.unpack_from('<Q', message, 26)[0], message[24])
+                    total_size: int = struct.unpack_from('<L', message, 34)[0]
+                    average_price: float = _scale_number(struct.unpack_from('<l', message, 38)[0], message[24])
+                    ask_price_at_execution: float = _scale_number(struct.unpack_from('<l', message, 42)[0], message[24])
+                    bid_price_at_execution: float = _scale_number(struct.unpack_from('<l', message, 46)[0], message[24])
+                    underlying_price_at_execution: float = _scale_number(struct.unpack_from('<l', message, 50)[0], message[25])
+                    timestamp: float = _get_seconds_from_epoch_from_ticks(struct.unpack_from('<Q', message, 54)[0])
+                    if on_unusual_activity:
+                        on_unusual_activity(UnusualActivity(contract, activity_type, sentiment, total_value, total_size, average_price, ask_price_at_execution, bid_price_at_execution, underlying_price_at_execution, timestamp))
                     start_index = start_index + _UNUSUAL_ACTIVITY_MESSAGE_SIZE
                 elif msg_type == 2:  # Refresh
                     message: bytes = datum[start_index:(start_index + _REFRESH_MESSAGE_SIZE)]
-                    symbol: str = message[0:21].decode('ascii')
-                    refresh: int = struct.unpack_from('<i', message, 22)[0]
-                    timestamp: float = struct.unpack_from('<d', message, 26)[0]
-                    if on_refresh: on_refresh(Refresh(symbol, refresh, timestamp))
+                    # byte structure:
+                    # contract length [0] uint8
+                    # contract [1-21] utf-8 string
+                    # event type [22] uint8
+                    # price type [23] uint8
+                    # open interest [24-27] uint32
+                    # open price [28-31] int32
+                    # close price [32-35] int32
+                    # high price [36-39] int32
+                    # low price [40-43] int32
+                    contract: str = message[1:message[0]].decode('ascii')
+                    open_interest: int = struct.unpack_from('<L', message, 24)[0]
+                    open_price: float = _scale_number(struct.unpack_from('<l', message, 28)[0], message[23])
+                    close_price: float = _scale_number(struct.unpack_from('<l', message, 32)[0], message[23])
+                    high_price: float = _scale_number(struct.unpack_from('<l', message, 36)[0], message[23])
+                    low_price: float = _scale_number(struct.unpack_from('<l', message, 40)[0], message[23])
+                    if on_refresh:
+                        on_refresh(Refresh(contract, open_interest, open_price, close_price, high_price, low_price))
                     start_index = start_index + _REFRESH_MESSAGE_SIZE
                 else:
                     _log.warn("Invalid Message Type: {0}".format(msg_type))
