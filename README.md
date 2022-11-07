@@ -37,8 +37,8 @@ import client
 
 trade_count = 0
 trade_count_lock = Lock()
-ask_count = 0
-ask_count_lock = Lock()
+quote_count = 0
+quote_count_lock = Lock()
 bid_count = 0
 bid_count_lock = Lock()
 refresh_count = 0
@@ -52,8 +52,8 @@ large_trade_count_lock = Lock()
 
 
 def on_quote(quote: client.Quote):
-    global ask_count
-    global ask_count_lock
+    global quote_count
+    global quote_count_lock
     global bid_count
     global bid_count_lock
     if (quote.type == client.QuoteType.ASK):
@@ -115,7 +115,7 @@ class Summarize(threading.Thread):
                 "App Stats - Trades: {0}, Asks: {1}, Bids: {2}, Open Interest: {3}, Blocks: {4}, Sweeps: {5}, Large Trades: {6}"
                 .format(
                     trade_count,
-                    ask_count,
+                    quote_count,
                     bid_count,
                     refresh_count,
                     block_count,
