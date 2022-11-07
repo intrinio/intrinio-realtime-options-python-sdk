@@ -17,8 +17,8 @@ sweep_count = 0
 sweep_count_lock = Lock()
 large_trade_count = 0
 large_trade_count_lock = Lock()
-golden_trade_count = 0
-golden_trade_count_lock = Lock()
+unusual_sweep_count = 0
+unusual_sweep_count_lock = Lock()
 
 
 def on_quote(quote: client.Quote):
@@ -49,8 +49,8 @@ def on_unusual_activity(ua: client.UnusualActivity):
     global sweep_count_lock
     global large_trade_count
     global large_trade_count_lock
-    global golden_trade_count
-    global golden_trade_count_lock
+    global unusual_sweep_count
+    global unusual_sweep_count_lock
     if ua.activity_type == client.UnusualActivityType.BLOCK:
         with block_count_lock:
             block_count += 1
@@ -60,9 +60,9 @@ def on_unusual_activity(ua: client.UnusualActivity):
     elif ua.activity_type == client.UnusualActivityType.LARGE:
         with large_trade_count_lock:
             large_trade_count += 1
-    elif ua.activity_type == client.UnusualActivityType.GOLDEN_EGG:
-        with golden_trade_count_lock:
-            golden_trade_count += 1
+    elif ua.activity_type == client.UnusualActivityType.UNUSUAL_SWEEP:
+        with unusual_sweep_count_lock:
+            unusual_sweep_count += 1
     else:
         client.log("on_unusual_activity - Unknown activity_type {0}", ua.activity_type)
 
@@ -79,7 +79,7 @@ class Summarize(threading.Thread):
             (dataMsgs, txtMsgs, queueDepth) = self.__client.get_stats()
             client.log("Client Stats - Data Messages: {0}, Text Messages: {1}, Queue Depth: {2}".format(dataMsgs, txtMsgs, queueDepth))
             client.log(
-                "App Stats - Trades: {0}, Quotes: {1}, Refreshes: {2}, Blocks: {3}, Sweeps: {4}, Large Trades: {5}, Goldens: {6}"
+                "App Stats - Trades: {0}, Quotes: {1}, Refreshes: {2}, Blocks: {3}, Sweeps: {4}, Large Trades: {5}, Unusual Sweeps: {6}"
                 .format(
                     trade_count,
                     quote_count,
@@ -87,7 +87,7 @@ class Summarize(threading.Thread):
                     block_count,
                     sweep_count,
                     large_trade_count,
-                    golden_trade_count))
+                    unusual_sweep_count))
 
 
 # Your config object MUST include the 'apiKey' and 'provider', at a minimum

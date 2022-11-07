@@ -144,7 +144,7 @@ class UnusualActivityType(IntEnum):
     BLOCK = 3
     SWEEP = 4
     LARGE = 5
-    GOLDEN_EGG = 6
+    UNUSUAL_SWEEP = 6
 
 
 class Refresh:

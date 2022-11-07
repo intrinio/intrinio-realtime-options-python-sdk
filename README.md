@@ -21,7 +21,7 @@ For a sample Python application see: [intrinio-realtime-options-python-sdk](http
 	* every trade
 	* conflated bid and ask
 	* open interest, open, close, high, low
-	* unusual activity(block trades, sweeps, whale trades (large), golden egg trades)
+	* unusual activity(block trades, sweeps, whale trades (large), unusual sweep trades)
 * Subscribe to updates from individual options contracts (or option chains)
 * Subscribe to updates for the entire univers of option contracts (~1.5M option contracts)
 
@@ -47,8 +47,8 @@ sweep_count = 0
 sweep_count_lock = Lock()
 large_trade_count = 0
 large_trade_count_lock = Lock()
-golden_trade_count = 0
-golden_trade_count_lock = Lock()
+unusual_sweep_count = 0
+unusual_sweep_count_lock = Lock()
 
 
 def on_quote(quote: client.Quote):
@@ -79,8 +79,8 @@ def on_unusual_activity(ua: client.UnusualActivity):
     global sweep_count_lock
     global large_trade_count
     global large_trade_count_lock
-    global golden_trade_count
-    global golden_trade_count_lock
+    global unusual_sweep_count
+    global unusual_sweep_count_lock
     if ua.activity_type == client.UnusualActivityType.BLOCK:
         with block_count_lock:
             block_count += 1
@@ -90,9 +90,9 @@ def on_unusual_activity(ua: client.UnusualActivity):
     elif ua.activity_type == client.UnusualActivityType.LARGE:
         with large_trade_count_lock:
             large_trade_count += 1
-    elif ua.activity_type == client.UnusualActivityType.GOLDEN_EGG:
-        with golden_trade_count_lock:
-            golden_trade_count += 1
+    elif ua.activity_type == client.UnusualActivityType.UNUSUAL_SWEEP:
+        with unusual_sweep_count_lock:
+            unusual_sweep_count += 1
     else:
         client.log("on_unusual_activity - Unknown activity_type {0}", ua.activity_type)
 
@@ -109,7 +109,7 @@ class Summarize(threading.Thread):
             (dataMsgs, txtMsgs, queueDepth) = self.__client.get_stats()
             client.log("Client Stats - Data Messages: {0}, Text Messages: {1}, Queue Depth: {2}".format(dataMsgs, txtMsgs, queueDepth))
             client.log(
-                "App Stats - Trades: {0}, Quotes: {1}, Refreshes: {2}, Blocks: {3}, Sweeps: {4}, Large Trades: {5}, Goldens: {6}"
+                "App Stats - Trades: {0}, Quotes: {1}, Refreshes: {2}, Blocks: {3}, Sweeps: {4}, Large Trades: {5}, Unusual Sweeps: {6}"
                 .format(
                     trade_count,
                     quote_count,
@@ -117,7 +117,7 @@ class Summarize(threading.Thread):
                     block_count,
                     sweep_count,
                     large_trade_count,
-                    golden_trade_count))
+                    unusual_sweep_count))
 
 
 # Your config object MUST include the 'apiKey' and 'provider', at a minimum
@@ -279,7 +279,7 @@ class UnusualActivity:
   * **`Block`** - represents an 'block' trade
   * **`Sweep`** - represents an intermarket sweep
   * **`Large`** - represents a trade of at least $100,000
-  * **`Golden Egg`** - represents a trade of at least $100,000
+  * **`UnusualSweep`** - represents an unusually large sweep near market open
 * **sentiment** - The sentiment of the unusual activity event
   *    **`Neutral`** - Reflects a minimal expected price change
   *    **`Bullish`** - Reflects an expected positive (upward) change in price
@@ -314,7 +314,7 @@ If you wish to perform a graceful shutdown of the application, please call the `
 
 ### Methods
 
-`client : Client = Client(config : Config, onTrade : Callable[[Trade], None], onQuote : Callable[[Quote], None] = None, onOpenInterest : Callable[[Refresh], None] = None, onUnusualActivity : Callable[[UnusualActivity],None] = None)` - Creates an Intrinio Real-Time client.
+`client : Client = Client(config : Config, on_trade : Callable[[Trade], None], on_quote : Callable[[Quote], None] = None, on_refresh : Callable[[Refresh], None] = None, on_unusual_activity : Callable[[UnusualActivity],None] = None)` - Creates an Intrinio Real-Time client.
 * **Parameter** `config`: The configuration to be used by the client.
 * **Parameter** `on_trade`: The Callable accepting trades. If no `on_trade` callback is provided, you will not receive trade updates from the server.
 * **Parameter** `on_quote`: The Callable accepting quotes. If no `on_quote` callback is provided, you will not receive quote (ask, bid) updates from the server.
