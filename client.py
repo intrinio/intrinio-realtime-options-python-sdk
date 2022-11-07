@@ -17,6 +17,7 @@ _TRADE_MESSAGE_SIZE = 72  # 61 used + 11 pad
 _QUOTE_MESSAGE_SIZE = 52  # 48 used + 4 pad
 _REFRESH_MESSAGE_SIZE = 52  # 44 used + 8 pad
 _UNUSUAL_ACTIVITY_MESSAGE_SIZE = 74  # 62 used + 12 pad
+_NAN = float("NAN")
 
 _stopFlag: threading.Event = threading.Event()
 _dataMsgLock: threading.Lock = threading.Lock()
@@ -330,8 +331,8 @@ class _WebSocket(websocket.WebSocketApp):
     def __on_error(self, ws, error):
         _log.error("Websocket - Error - {0}".format(error))
 
-    def __on_data(self, ws, data, type, continueFlag):
-        if type == websocket.ABNF.OPCODE_BINARY:
+    def __on_data(self, ws, data, code, continueFlag):
+        if code == websocket.ABNF.OPCODE_BINARY:
             with _dataMsgLock:
                 global _dataMsgCount
                 _dataMsgCount += 1
@@ -396,60 +397,74 @@ def _get_seconds_from_epoch_from_ticks(ticks: int) -> float:
     return float(ticks) / 1_000_000_000.0
 
 
-def _scale_number(value: int, scale_type: int) -> float:
-    if scale_type == 0x00:
-        return float(value)  # divided by 1
-    elif scale_type == 0x01:
-        return float(value) / 10.0
-    elif scale_type == 0x02:
-        return float(value) / 100.0
-    elif scale_type == 0x03:
-        return float(value) / 1_000.0
-    elif scale_type == 0x04:
-        return float(value) / 10_000.0
-    elif scale_type == 0x05:
-        return float(value) / 100_000.0
-    elif scale_type == 0x06:
-        return float(value) / 1_000_000.0
-    elif scale_type == 0x07:
-        return float(value) / 10_000_000.0
-    elif scale_type == 0x08:
-        return float(value) / 100_000_000.0
-    elif scale_type == 0x09:
-        return float(value) / 1_000_000_000.0
-    elif scale_type == 0x0A:
-        return float(value) / 512.0
-    elif scale_type == 0x0F:
-        return 0.0
+def _scale_value(value: int, scale_type: int) -> float:
+    # if scale_type == 0x00:
+    #     return float(value)  # divided by 1
+    # elif scale_type == 0x01:
+    #     return float(value) / 10.0
+    # elif scale_type == 0x02:
+    #     return float(value) / 100.0
+    # elif scale_type == 0x03:
+    #     return float(value) / 1_000.0
+    # elif scale_type == 0x04:
+    #     return float(value) / 10_000.0
+    # elif scale_type == 0x05:
+    #     return float(value) / 100_000.0
+    # elif scale_type == 0x06:
+    #     return float(value) / 1_000_000.0
+    # elif scale_type == 0x07:
+    #     return float(value) / 10_000_000.0
+    # elif scale_type == 0x08:
+    #     return float(value) / 100_000_000.0
+    # elif scale_type == 0x09:
+    #     return float(value) / 1_000_000_000.0
+    # elif scale_type == 0x0A:
+    #     return float(value) / 512.0
+    # elif scale_type == 0x0F:
+    #     return 0.0
+    # else:
+    #     return float(value)  # divided by 1
+    match scale_type:
+        case 0x00:
+            return float(value)  # divided by 1
+        case 0x01:
+            return float(value) / 10.0
+        case 0x02:
+            return float(value) / 100.0
+        case 0x03:
+            return float(value) / 1_000.0
+        case 0x04:
+            return float(value) / 10_000.0
+        case 0x05:
+            return float(value) / 100_000.0
+        case 0x06:
+            return float(value) / 1_000_000.0
+        case 0x07:
+            return float(value) / 10_000_000.0
+        case 0x08:
+            return float(value) / 100_000_000.0
+        case 0x09:
+            return float(value) / 1_000_000_000.0
+        case 0x0A:
+            return float(value) / 512.0
+        case 0x0F:
+            return 0.0
+        case _:
+            return float(value)  # divided by 1
+
+
+def _scale_uint64(value: int, scale_type: int) -> float:
+    if value == 18446744073709551615:
+        return _NAN
     else:
-        return float(value)  # divided by 1
-    # match scale_type:
-    #     case 0x00:
-    #         return float(value)  # divided by 1
-    #     case 0x01:
-    #         return float(value) / 10.0
-    #     case 0x02:
-    #         return float(value) / 100.0
-    #     case 0x03:
-    #         return float(value) / 1_000.0
-    #     case 0x04:
-    #         return float(value) / 10_000.0
-    #     case 0x05:
-    #         return float(value) / 100_000.0
-    #     case 0x06:
-    #         return float(value) / 1_000_000.0
-    #     case 0x07:
-    #         return float(value) / 10_000_000.0
-    #     case 0x08:
-    #         return float(value) / 100_000_000.0
-    #     case 0x09:
-    #         return float(value) / 1_000_000_000.0
-    #     case 0x0A:
-    #         return float(value) / 512.0
-    #     case 0x0F:
-    #         return 0.0
-    #     case _:
-    #         return float(value)  # divided by 1
+        return _scale_value(value, scale_type)
+
+
+def _scale_int32(value: int, scale_type: int) -> float:
+    if value == 2147483647 or value == -2147483648:
+        return _NAN
+    else:
+        return _scale_value(value, scale_type)
 
 
 def _thread_fn(index: int, data: queue.Queue,
@@ -479,11 +494,11 @@ def _thread_fn(index: int, data: queue.Queue,
                     # 	timestamp [40-47] uint64
                     # https://docs.python.org/3/library/struct.html#format-characters
                     contract: str = message[1:message[0]].decode('ascii')
-                    ask_price: float = _scale_number(struct.unpack_from('<l', message, 24)[0], message[23])
+                    ask_price: float = _scale_int32(struct.unpack_from('<l', message, 24)[0], message[23])
                     ask_size: int = struct.unpack_from('<L', message, 28)[0]
-                    bid_price: float = _scale_number(struct.unpack_from('<l', message, 32)[0], message[23])
+                    bid_price: float = _scale_int32(struct.unpack_from('<l', message, 32)[0], message[23])
                     bid_size: int = struct.unpack_from('<L', message, 36)[0]
-                    timestamp: float = _get_seconds_from_epoch_from_ticks(struct.unpack_from('<Q', message, 34)[0])
+                    timestamp: float = _get_seconds_from_epoch_from_ticks(struct.unpack_from('<Q', message, 40)[0])
                     if on_quote:
                         on_quote(Quote(contract, ask_price, ask_size, bid_price, bid_size, timestamp))
                     start_index = start_index + _QUOTE_MESSAGE_SIZE
@@ -504,13 +519,13 @@ def _thread_fn(index: int, data: queue.Queue,
                     #  underlying price at execution [57-60] int32
                     # https://docs.python.org/3/library/struct.html#format-characters
                     contract: str = message[1:message[0]].decode('ascii')
-                    price: float = _scale_number(struct.unpack_from('<l', message, 25)[0], message[23])
+                    price: float = _scale_int32(struct.unpack_from('<l', message, 25)[0], message[23])
                     size: int = struct.unpack_from('<L', message, 29)[0]
                     timestamp: float = _get_seconds_from_epoch_from_ticks(struct.unpack_from('<Q', message, 33)[0])
                     total_volume: int = struct.unpack_from('<Q', message, 41)[0]
-                    ask_price_at_execution: int = _scale_number(struct.unpack_from('<l', message, 49)[0], message[23])
-                    bid_price_at_execution: int = _scale_number(struct.unpack_from('<l', message, 53)[0], message[23])
-                    underlying_price_at_execution: int = _scale_number(struct.unpack_from('<l', message, 57)[0], message[24])
+                    ask_price_at_execution: int = _scale_int32(struct.unpack_from('<l', message, 49)[0], message[23])
+                    bid_price_at_execution: int = _scale_int32(struct.unpack_from('<l', message, 53)[0], message[23])
+                    underlying_price_at_execution: int = _scale_int32(struct.unpack_from('<l', message, 57)[0], message[24])
                     if on_trade:
                         on_trade(Trade(contract, price, size, timestamp, total_volume, ask_price_at_execution, bid_price_at_execution, underlying_price_at_execution))
                     start_index = start_index + _TRADE_MESSAGE_SIZE
@@ -534,12 +549,12 @@ def _thread_fn(index: int, data: queue.Queue,
                     contract: str = message[1:message[0]].decode('ascii')
                     activity_type: UnusualActivityType = message[22]
                     sentiment: UnusualActivitySentiment = message[23]
-                    total_value: float = _scale_number(struct.unpack_from('<Q', message, 26)[0], message[24])
+                    total_value: float = _scale_uint64(struct.unpack_from('<Q', message, 26)[0], message[24])
                     total_size: int = struct.unpack_from('<L', message, 34)[0]
-                    average_price: float = _scale_number(struct.unpack_from('<l', message, 38)[0], message[24])
-                    ask_price_at_execution: float = _scale_number(struct.unpack_from('<l', message, 42)[0], message[24])
-                    bid_price_at_execution: float = _scale_number(struct.unpack_from('<l', message, 46)[0], message[24])
-                    underlying_price_at_execution: float = _scale_number(struct.unpack_from('<l', message, 50)[0], message[25])
+                    average_price: float = _scale_int32(struct.unpack_from('<l', message, 38)[0], message[24])
+                    ask_price_at_execution: float = _scale_int32(struct.unpack_from('<l', message, 42)[0], message[24])
+                    bid_price_at_execution: float = _scale_int32(struct.unpack_from('<l', message, 46)[0], message[24])
+                    underlying_price_at_execution: float = _scale_int32(struct.unpack_from('<l', message, 50)[0], message[25])
                     timestamp: float = _get_seconds_from_epoch_from_ticks(struct.unpack_from('<Q', message, 54)[0])
                     if on_unusual_activity:
                         on_unusual_activity(UnusualActivity(contract, activity_type, sentiment, total_value, total_size, average_price, ask_price_at_execution, bid_price_at_execution, underlying_price_at_execution, timestamp))
@@ -558,10 +573,10 @@ def _thread_fn(index: int, data: queue.Queue,
                     # low price [40-43] int32
                     contract: str = message[1:message[0]].decode('ascii')
                     open_interest: int = struct.unpack_from('<L', message, 24)[0]
-                    open_price: float = _scale_number(struct.unpack_from('<l', message, 28)[0], message[23])
-                    close_price: float = _scale_number(struct.unpack_from('<l', message, 32)[0], message[23])
-                    high_price: float = _scale_number(struct.unpack_from('<l', message, 36)[0], message[23])
-                    low_price: float = _scale_number(struct.unpack_from('<l', message, 40)[0], message[23])
+                    open_price: float = _scale_int32(struct.unpack_from('<l', message, 28)[0], message[23])
+                    close_price: float = _scale_int32(struct.unpack_from('<l', message, 32)[0], message[23])
+                    high_price: float = _scale_int32(struct.unpack_from('<l', message, 36)[0], message[23])
+                    low_price: float = _scale_int32(struct.unpack_from('<l', message, 40)[0], message[23])
                     if on_refresh:
                         on_refresh(Refresh(contract, open_interest, open_price, close_price, high_price, low_price))
                     start_index = start_index + _REFRESH_MESSAGE_SIZE
