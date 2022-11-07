@@ -60,7 +60,7 @@ def on_unusual_activity(ua: client.UnusualActivity):
     elif ua.activity_type == client.UnusualActivityType.LARGE:
         with large_trade_count_lock:
             large_trade_count += 1
-    elif ua.activity_type == client.UnusualActivityType.GOLDEN:
+    elif ua.activity_type == client.UnusualActivityType.GOLDEN_EGG:
         with golden_trade_count_lock:
             golden_trade_count += 1
     else:
