@@ -369,14 +369,14 @@ class _WebSocket(websocket.WebSocketApp):
 
 
 class Config:
-    def __init__(self, apiKey: str, provider: Providers, numThreads: int = 4, logLevel: LogLevel = LogLevel.INFO,
-                 manualIpAddress: str = None, symbols: set[str] = None):
-        self.apiKey: str = apiKey
+    def __init__(self, api_key: str, provider: Providers, num_threads: int = 4, log_level: LogLevel = LogLevel.INFO,
+                 manual_ip_address: str = None, symbols: set[str] = None):
+        self.api_key: str = api_key
         self.provider: Providers = provider
-        self.numThreads: int = numThreads
-        self.manualIpAddress: str = manualIpAddress
+        self.num_threads: int = num_threads
+        self.manual_ip_address: str = manual_ip_address
         self.symbols: list[str] = symbols
-        self.logLevel: LogLevel = logLevel
+        self.log_level: LogLevel = log_level
 
 
 def _heartbeat_fn(ws_lock: threading.Lock, web_socket: _WebSocket):
@@ -587,18 +587,39 @@ def _thread_fn(index: int, data: queue.Queue,
     _log.debug("Worker thread {0} stopped".format(index))
 
 
+def _transform_contract(contract: str) -> str:
+    if (len(contract) <= 9) or (contract.find('.') >= 9):
+        return contract
+    else:  # this is of the old format and we need to translate it. ex: AAPL__220101C00140000, TSLA__221111P00195000
+        symbol: str = contract[0:6].rstrip('_')
+        date: str = contract[6:12]
+        call_put: str = contract[12]
+        whole_price: str = contract[13:18].lstrip('0')
+        if whole_price == '':
+            whole_price = '0'
+        decimal_price: str = contract[18:]
+        if decimal_price[2] == '0':
+            decimal_price = decimal_price[0:2]
+        return "{symbol}_{date}{call_put}{whole_price}.{decimal_price}".format(
+            symbol=symbol,
+            date=date,
+            call_put=call_put,
+            whole_price=whole_price,
+            decimal_price=decimal_price)
+
+
 class Client:
     def __init__(self, config: Config, on_trade: Callable[[Trade], None], on_quote: Callable[[Quote], None] = None,
                  on_refresh: Callable[[Refresh], None] = None,
                  on_unusual_activity: Callable[[UnusualActivity], None] = None):
         if not config:
             raise ValueError("Config is required")
-        if (not config.apiKey) or (not isinstance(config.apiKey, str)):
+        if (not config.api_key) or (not isinstance(config.api_key, str)):
             raise ValueError("You must provide a valid API key")
         if (not config.provider) or (not isinstance(config.provider, Providers)):
             raise ValueError("You must specify a valid provider")
         if ((config.provider == Providers.MANUAL) or (config.provider == Providers.MANUAL_FIREHOSE)) and (
-                (not config.manualIpAddress) or (not isinstance(config.manualIpAddress, str))):
+                (not config.manual_ip_address) or (not isinstance(config.manual_ip_address, str))):
             raise ValueError("You must specify an IP address for a manual configuration")
         if on_trade:
             if callable(on_trade):
@@ -629,12 +650,12 @@ class Client:
         else:
             self.__use_on_unusual_activity: bool = False
         self.__provider: Providers = config.provider
-        self.__apiKey: str = config.apiKey
-        self.__manualIP: str = config.manualIpAddress
+        self.__apiKey: str = config.api_key
+        self.__manualIP: str = config.manual_ip_address
         self.__token: tuple[str, float] = (None, 0.0)
         self.__webSocket: _WebSocket = None
         if config.symbols and (isinstance(config.symbols, list)) and (len(config.symbols) > 0):
-            self.__channels: set[str] = set((symbol) for symbol in config.symbols)
+            self.__channels: set[str] = set((_transform_contract(symbol)) for symbol in config.symbols)
         else:
             self.__channels: set[str] = set()
         self.__data: queue.Queue = queue.Queue()
@@ -646,10 +667,10 @@ class Client:
         self.__worker_threads: list[threading.Thread] = [threading.Thread(None,
                                                                           _thread_fn,
                                                                           args=[i, self.__data, on_trade, on_quote, on_refresh, on_unusual_activity],
-                                                                          daemon=True) for i in range(config.numThreads)]
+                                                                          daemon=True) for i in range(config.num_threads)]
         self.__socket_thread: threading.Thread = None
         self.__is_started: bool = False
-        _log.setLevel(config.logLevel)
+        _log.setLevel(config.log_level)
 
     def __all_ready(self) -> bool:
         self.__ws_lock.acquire()
@@ -709,27 +730,29 @@ class Client:
         return self.__channels
 
     def __join(self, symbol: str):
-        if symbol not in self.__channels:
-            self.__channels.add(symbol)
-            symbol_bytes = bytes(symbol, 'utf-8')
+        transformed_symbol: str = _transform_contract(symbol)
+        if transformed_symbol not in self.__channels:
+            self.__channels.add(transformed_symbol)
+            symbol_bytes = bytes(transformed_symbol, 'utf-8')
             message: bytes = bytearray(len(symbol_bytes)+2)
             message[0] = 74  # join code
             message[1] = _get_option_mask(self.__use_on_trade, self.__use_on_quote, self.__use_on_refresh, self.__use_on_unusual_activity)
             message[2:] = symbol_bytes
             if self.__webSocket.isReady:
-                _log.info("Websocket - Joining channel: {0}".format(symbol))
+                _log.info("Websocket - Joining channel: {0}".format(transformed_symbol))
                 self.__webSocket.send_binary(message)
 
     def __leave(self, symbol: str):
-        if symbol in self.__channels:
-            self.__channels.remove(symbol)
-            symbol_bytes = bytes(symbol, 'utf-8')
+        transformed_symbol: str = _transform_contract(symbol)
+        if transformed_symbol in self.__channels:
+            self.__channels.remove(transformed_symbol)
+            symbol_bytes = bytes(transformed_symbol, 'utf-8')
             message: bytes = bytearray(len(symbol_bytes) + 2)
             message[0] = 76  # leave code
             message[1] = _get_option_mask(self.__use_on_trade, self.__use_on_quote, self.__use_on_refresh, self.__use_on_unusual_activity)
             message[2:] = symbol_bytes
             if self.__webSocket.isReady:
-                _log.info("Websocket - Leaving channel: {0}".format(symbol))
+                _log.info("Websocket - Leaving channel: {0}".format(transformed_symbol))
                 self.__webSocket.send_binary(message)
 
     def join(self, *symbols):

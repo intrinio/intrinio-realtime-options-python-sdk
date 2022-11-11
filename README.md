@@ -120,14 +120,14 @@ class Summarize(threading.Thread):
                     unusual_sweep_count))
 
 
-# Your config object MUST include the 'apiKey' and 'provider', at a minimum
+# Your config object MUST include the 'api_key' and 'provider', at a minimum
 config: client.Config = client.Config(
-    apiKey="",
+    api_key="",
     provider=client.Providers.OPRA,
-    numThreads=8,
+    num_threads=8,
     symbols=["AAPL"],
     # this is a static list of symbols (options contracts or option chains) that will automatically be subscribed to when the client starts
-    logLevel=client.LogLevel.INFO)
+    log_level=client.LogLevel.INFO)
 
 # Register only the callbacks that you want.
 # Take special care when registering the 'on_quote' handler as it will increase throughput by ~10x
