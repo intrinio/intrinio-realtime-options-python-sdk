@@ -379,6 +379,49 @@ class Config:
         self.log_level: LogLevel = log_level
 
 
+def _transform_contract_to_new(contract: str) -> str:
+    if (len(contract) <= 9) or (contract.find('.') >= 9):
+        return contract
+    else:  # this is of the old format and we need to translate it. ex: AAPL__220101C00140000, TSLA__221111P00195000
+        symbol: str = contract[0:6].rstrip('_')
+        date: str = contract[6:12]
+        call_put: str = contract[12]
+        whole_price: str = contract[13:18].lstrip('0')
+        if whole_price == '':
+            whole_price = '0'
+        decimal_price: str = contract[18:]
+        if decimal_price[2] == '0':
+            decimal_price = decimal_price[0:2]
+        return "{symbol}_{date}{call_put}{whole_price}.{decimal_price}".format(
+            symbol=symbol,
+            date=date,
+            call_put=call_put,
+            whole_price=whole_price,
+            decimal_price=decimal_price)
+
+
+def _copy_to(src: list, dest: list, dest_index: int):
+    for i in range(0, len(src)):
+        dest[i + dest_index] = src[i];
+
+
+def _transform_contract_to_old(alternate_formatted_contract: bytes) -> str:
+    # Transform from server format to normal format
+    # From this: AAPL_201016C100.00 or ABC_201016C100.003
+    # To this: AAPL__201016C00100000 or ABC___201016C00100003
+
+    contract_chars: list = [ord('_'), ord('_'), ord('_'), ord('_'), ord('_'), ord('_'), ord('2'), ord('2'), ord('0'), ord('1'), ord('0'), ord('1'), ord('C'), ord('0'), ord('0'), ord('0'), ord('0'), ord('0'), ord('0'), ord('0'), ord('0')]
+    underscore_index: int = alternate_formatted_contract.find(ord('_'))
+    decimal_index: int = alternate_formatted_contract[9:].find(ord('.')) + 9  # ignore decimals in tickersymbol
+    _copy_to(alternate_formatted_contract[0:underscore_index], contract_chars, 0)  # copy symbol
+    _copy_to(alternate_formatted_contract[underscore_index+1:underscore_index+7], contract_chars, 6)  # copy date
+    _copy_to(alternate_formatted_contract[underscore_index+7:underscore_index+8], contract_chars, 12)  # copy put / call
+    _copy_to(alternate_formatted_contract[underscore_index+8:decimal_index], contract_chars, 18 - (decimal_index - underscore_index - 8))  # whole number copy
+    _copy_to(alternate_formatted_contract[decimal_index+1:], contract_chars, 18)  # decimal number copy
+
+    return bytes(contract_chars).decode('ascii')
+
+
 def _heartbeat_fn(ws_lock: threading.Lock, web_socket: _WebSocket):
     _log.debug("Starting heartbeat")
     while not _stopFlag.is_set():
@@ -493,7 +536,7 @@ def _thread_fn(index: int, data: queue.Queue,
                     # 	bid size [36-39] uint32
                     # 	timestamp [40-47] uint64
                     # https://docs.python.org/3/library/struct.html#format-characters
-                    contract: str = message[1:message[0]].decode('ascii')
+                    contract: str = _transform_contract_to_old(message[1:message[0]])
                     ask_price: float = _scale_int32(struct.unpack_from('<l', message, 24)[0], message[23])
                     ask_size: int = struct.unpack_from('<L', message, 28)[0]
                     bid_price: float = _scale_int32(struct.unpack_from('<l', message, 32)[0], message[23])
@@ -518,7 +561,7 @@ def _thread_fn(index: int, data: queue.Queue,
                     #  bid price at execution [53-56] int32
                     #  underlying price at execution [57-60] int32
                     # https://docs.python.org/3/library/struct.html#format-characters
-                    contract: str = message[1:message[0]].decode('ascii')
+                    contract: str = _transform_contract_to_old(message[1:message[0]])
                     price: float = _scale_int32(struct.unpack_from('<l', message, 25)[0], message[23])
                     size: int = struct.unpack_from('<L', message, 29)[0]
                     timestamp: float = _get_seconds_from_epoch_from_ticks(struct.unpack_from('<Q', message, 33)[0])
@@ -546,7 +589,7 @@ def _thread_fn(index: int, data: queue.Queue,
                     # underlying price at execution [50-53] int32
                     # timestamp [54-61] uint64
                     # https://docs.python.org/3/library/struct.html#format-characters
-                    contract: str = message[1:message[0]].decode('ascii')
+                    contract: str = _transform_contract_to_old(message[1:message[0]])
                     activity_type: UnusualActivityType = message[22]
                     sentiment: UnusualActivitySentiment = message[23]
                     total_value: float = _scale_uint64(struct.unpack_from('<Q', message, 26)[0], message[24])
@@ -571,7 +614,7 @@ def _thread_fn(index: int, data: queue.Queue,
                     # close price [32-35] int32
                     # high price [36-39] int32
                     # low price [40-43] int32
-                    contract: str = message[1:message[0]].decode('ascii')
+                    contract: str = _transform_contract_to_old(message[1:message[0]])
                     open_interest: int = struct.unpack_from('<L', message, 24)[0]
                     open_price: float = _scale_int32(struct.unpack_from('<l', message, 28)[0], message[23])
                     close_price: float = _scale_int32(struct.unpack_from('<l', message, 32)[0], message[23])
@@ -585,27 +628,6 @@ def _thread_fn(index: int, data: queue.Queue,
         except queue.Empty:
             continue
     _log.debug("Worker thread {0} stopped".format(index))
-
-
-def _transform_contract(contract: str) -> str:
-    if (len(contract) <= 9) or (contract.find('.') >= 9):
-        return contract
-    else:  # this is of the old format and we need to translate it. ex: AAPL__220101C00140000, TSLA__221111P00195000
-        symbol: str = contract[0:6].rstrip('_')
-        date: str = contract[6:12]
-        call_put: str = contract[12]
-        whole_price: str = contract[13:18].lstrip('0')
-        if whole_price == '':
-            whole_price = '0'
-        decimal_price: str = contract[18:]
-        if decimal_price[2] == '0':
-            decimal_price = decimal_price[0:2]
-        return "{symbol}_{date}{call_put}{whole_price}.{decimal_price}".format(
-            symbol=symbol,
-            date=date,
-            call_put=call_put,
-            whole_price=whole_price,
-            decimal_price=decimal_price)
 
 
 class Client:
@@ -655,7 +677,7 @@ class Client:
         self.__token: tuple[str, float] = (None, 0.0)
         self.__webSocket: _WebSocket = None
         if config.symbols and (isinstance(config.symbols, list)) and (len(config.symbols) > 0):
-            self.__channels: set[str] = set((_transform_contract(symbol)) for symbol in config.symbols)
+            self.__channels: set[str] = set((_transform_contract_to_new(symbol)) for symbol in config.symbols)
         else:
             self.__channels: set[str] = set()
         self.__data: queue.Queue = queue.Queue()
@@ -730,7 +752,7 @@ class Client:
         return self.__channels
 
     def __join(self, symbol: str):
-        transformed_symbol: str = _transform_contract(symbol)
+        transformed_symbol: str = _transform_contract_to_new(symbol)
         if transformed_symbol not in self.__channels:
             self.__channels.add(transformed_symbol)
             symbol_bytes = bytes(transformed_symbol, 'utf-8')
@@ -743,7 +765,7 @@ class Client:
                 self.__webSocket.send_binary(message)
 
     def __leave(self, symbol: str):
-        transformed_symbol: str = _transform_contract(symbol)
+        transformed_symbol: str = _transform_contract_to_new(symbol)
         if transformed_symbol in self.__channels:
             self.__channels.remove(transformed_symbol)
             symbol_bytes = bytes(transformed_symbol, 'utf-8')
