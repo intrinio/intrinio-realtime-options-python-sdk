@@ -77,20 +77,21 @@ class Quote:
                        self.timestamp)
 
     def get_strike_price(self) -> float:
-        return float(self.contract[(self.contract.index('_') + 8):])
+        whole: int = (self.contract[13] - '0') * 10000 + (self.contract[14] - '0') * 1000 + (self.contract[15] - '0') * 100 + (self.contract[16] - '0') * 10 + (self.contract[17] - '0')
+        part: float = (self.contract[18] - '0') * 0.1 + (self.contract[19] - '0') * 0.01 + (self.contract[20] - '0') * 0.001
+        return float(whole) + part
 
     def is_put(self) -> bool:
-        return self.contract[(self.contract.index('_') + 7)] == 'P'
+        return self.contract[12] == 'P'
 
     def is_call(self) -> bool:
-        return self.contract[(self.contract.index('_') + 7)] == 'C'
+        return self.contract[12] == 'C'
 
     def get_expiration_date(self) -> time.struct_time:
-        date_start_index: int = self.contract.index('_') + 1
-        return time.strptime(self.contract[date_start_index: (date_start_index+6)], "%y%m%d")
+        return time.strptime(self.contract[6:12], "%y%m%d")
 
     def get_underlying_symbol(self) -> str:
-        return self.contract[0:self.contract.index('_')].trim()
+        return self.contract[0:6].rstrip('_')
 
 
 class Trade:
@@ -116,20 +117,21 @@ class Trade:
                        self.underlying_price_at_execution)
 
     def get_strike_price(self) -> float:
-        return float(self.contract[(self.contract.index('_') + 8):])
+        whole: int = (self.contract[13] - '0') * 10000 + (self.contract[14] - '0') * 1000 + (self.contract[15] - '0') * 100 + (self.contract[16] - '0') * 10 + (self.contract[17] - '0')
+        part: float = (self.contract[18] - '0') * 0.1 + (self.contract[19] - '0') * 0.01 + (self.contract[20] - '0') * 0.001
+        return float(whole) + part
 
     def is_put(self) -> bool:
-        return self.contract[(self.contract.index('_') + 7)] == 'P'
+        return self.contract[12] == 'P'
 
     def is_call(self) -> bool:
-        return self.contract[(self.contract.index('_') + 7)] == 'C'
+        return self.contract[12] == 'C'
 
     def get_expiration_date(self) -> time.struct_time:
-        date_start_index: int = self.contract.index('_') + 1
-        return time.strptime(self.contract[date_start_index: (date_start_index + 6)], "%y%m%d")
+        return time.strptime(self.contract[6:12], "%y%m%d")
 
     def get_underlying_symbol(self) -> str:
-        return self.contract[0:self.contract.index('_')].trim()
+        return self.contract[0:6].rstrip('_')
 
 
 @unique
@@ -166,20 +168,21 @@ class Refresh:
                        self.low_price)
 
     def get_strike_price(self) -> float:
-        return float(self.contract[(self.contract.index('_') + 8):])
+        whole: int = (self.contract[13] - '0') * 10000 + (self.contract[14] - '0') * 1000 + (self.contract[15] - '0') * 100 + (self.contract[16] - '0') * 10 + (self.contract[17] - '0')
+        part: float = (self.contract[18] - '0') * 0.1 + (self.contract[19] - '0') * 0.01 + (self.contract[20] - '0') * 0.001
+        return float(whole) + part
 
     def is_put(self) -> bool:
-        return self.contract[(self.contract.index('_') + 7)] == 'P'
+        return self.contract[12] == 'P'
 
     def is_call(self) -> bool:
-        return self.contract[(self.contract.index('_') + 7)] == 'C'
+        return self.contract[12] == 'C'
 
     def get_expiration_date(self) -> time.struct_time:
-        date_start_index: int = self.contract.index('_') + 1
-        return time.strptime(self.contract[date_start_index: (date_start_index+6)], "%y%m%d")
+        return time.strptime(self.contract[6:12], "%y%m%d")
 
     def get_underlying_symbol(self) -> str:
-        return self.contract[0:self.contract.index('_')].trim()
+        return self.contract[0:6].rstrip('_')
 
 
 class UnusualActivity:
@@ -219,20 +222,21 @@ class UnusualActivity:
                         self.timestamp)
 
     def get_strike_price(self) -> float:
-        return float(self.contract[(self.contract.index('_') + 8):])
+        whole: int = (self.contract[13] - '0') * 10000 + (self.contract[14] - '0') * 1000 + (self.contract[15] - '0') * 100 + (self.contract[16] - '0') * 10 + (self.contract[17] - '0')
+        part: float = (self.contract[18] - '0') * 0.1 + (self.contract[19] - '0') * 0.01 + (self.contract[20] - '0') * 0.001
+        return float(whole) + part
 
     def is_put(self) -> bool:
-        return self.contract[(self.contract.index('_') + 7)] == 'P'
+        return self.contract[12] == 'P'
 
     def is_call(self) -> bool:
-        return self.contract[(self.contract.index('_') + 7)] == 'C'
+        return self.contract[12] == 'C'
 
     def get_expiration_date(self) -> time.struct_time:
-        date_start_index: int = self.contract.index('_') + 1
-        return time.strptime(self.contract[date_start_index: (date_start_index + 6)], "%y%m%d")
+        return time.strptime(self.contract[6:12], "%y%m%d")
 
     def get_underlying_symbol(self) -> str:
-        return self.contract[0:self.contract.index('_')].trim()
+        return self.contract[0:6].rstrip('_')
 
 
 def _get_option_mask(use_on_trade: bool, use_on_quote: bool, use_on_refresh: bool, use_on_unusual_activity: bool) -> int:
