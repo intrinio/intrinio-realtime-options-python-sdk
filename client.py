@@ -406,7 +406,7 @@ def _transform_contract_to_new(contract: str) -> str:
 
 def _copy_to(src: list, dest: list, dest_index: int):
     for i in range(0, len(src)):
-        dest[i + dest_index] = src[i];
+        dest[i + dest_index] = src[i]
 
 
 def _transform_contract_to_old(alternate_formatted_contract: bytes) -> str:
