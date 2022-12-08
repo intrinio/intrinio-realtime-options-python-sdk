@@ -20,140 +20,157 @@ For a sample Python application see: [intrinio-realtime-options-python-sdk](http
 * Receive streaming, real-time option price updates:
 	* every trade
 	* conflated bid and ask
-	* open interest
-	* unusual activity(block trades, sweeps, whale trades)
+	* open interest, open, close, high, low
+	* unusual activity(block trades, sweeps, whale trades (large), unusual sweep trades)
 * Subscribe to updates from individual options contracts (or option chains)
 * Subscribe to updates for the entire univers of option contracts (~1.5M option contracts)
 
 ## Example Usage
+
 ```python
 import threading
 import signal
 import time
 import sys
-from threading import Event,Lock
+from threading import Event, Lock
 import client
 
 trade_count = 0
 trade_count_lock = Lock()
-ask_count = 0
-ask_count_lock = Lock()
-bid_count = 0
-bid_count_lock = Lock()
-open_interest_count = 0
-open_interest_count_lock = Lock()
+quote_count = 0
+quote_count_lock = Lock()
+refresh_count = 0
+refresh_count_lock = Lock()
 block_count = 0
 block_count_lock = Lock()
 sweep_count = 0
 sweep_count_lock = Lock()
 large_trade_count = 0
 large_trade_count_lock = Lock()
+unusual_sweep_count = 0
+unusual_sweep_count_lock = Lock()
 
-def on_quote(quote : client.Quote):
-    global ask_count
-    global ask_count_lock
-    global bid_count
-    global bid_count_lock
-    if (quote.type == client.QuoteType.ASK):
-        with ask_count_lock: ask_count += 1
-    elif (quote.type == client.QuoteType.BID):
-        with bid_count_lock: bid_count += 1
-    else: client.Log("on_quote - Unknown quote type {0}", quote.type)
 
-def on_trade(trade : client.Trade):
+def on_quote(quote: client.Quote):
+    global quote_count
+    global quote_count_lock
+    with quote_count_lock:
+        quote_count += 1
+
+
+def on_trade(trade: client.Trade):
     global trade_count
     global trade_count_lock
-    with trade_count_lock: trade_count += 1
+    with trade_count_lock:
+        trade_count += 1
 
-def on_open_interest(oi : client.OpenInterest):
-    global open_interest_count
-    global open_interest_count_lock
-    with open_interest_count_lock: open_interest_count += 1
 
-def on_unusual_activity(ua : client.UnusualActivity):
+def on_refresh(refresh: client.Refresh):
+    global refresh_count
+    global refresh_count_lock
+    with refresh_count_lock:
+        refresh_count += 1
+
+
+def on_unusual_activity(ua: client.UnusualActivity):
     global block_count
     global block_count_lock
     global sweep_count
     global sweep_count_lock
     global large_trade_count
     global large_trade_count_lock
-    if (ua.type == client.UnusualActivityType.BLOCK):
-        with block_count_lock: block_count += 1
-    elif (ua.type == client.UnusualActivityType.SWEEP):
-        with sweep_count_lock: sweep_count += 1
-    elif (ua.type == client.UnusualActivityType.LARGE):
-        with large_trade_count_lock: large_trade_count += 1
-    else : client.Log("on_unusual_activity - Unknown type {0}", ua.type)
+    global unusual_sweep_count
+    global unusual_sweep_count_lock
+    if ua.activity_type == client.UnusualActivityType.BLOCK:
+        with block_count_lock:
+            block_count += 1
+    elif ua.activity_type == client.UnusualActivityType.SWEEP:
+        with sweep_count_lock:
+            sweep_count += 1
+    elif ua.activity_type == client.UnusualActivityType.LARGE:
+        with large_trade_count_lock:
+            large_trade_count += 1
+    elif ua.activity_type == client.UnusualActivityType.UNUSUAL_SWEEP:
+        with unusual_sweep_count_lock:
+            unusual_sweep_count += 1
+    else:
+        client.log("on_unusual_activity - Unknown activity_type {0}", ua.activity_type)
+
 
 class Summarize(threading.Thread):
-    def __init__(self, stop_flag : threading.Event, client : client.Client):
+    def __init__(self, stop_flag: threading.Event, intrinio_client: client.Client):
         threading.Thread.__init__(self, args=(), kwargs=None, daemon=True)
-        self.__stop_flag : threading.Event = stop_flag
-        self.__client = client
+        self.__stop_flag: threading.Event = stop_flag
+        self.__client = intrinio_client
 
     def run(self):
-        while (not self.__stop_flag.is_set()):
+        while not self.__stop_flag.is_set():
             time.sleep(10.0)
-            (dataMsgs, txtMsgs, queueDepth) = self.__client.getStats()
-            client.Log("Client Stats - Data Messages: {0}, Text Messages: {1}, Queue Depth: {2}".format(dataMsgs, txtMsgs, queueDepth))
-            client.Log("App Stats - Trades: {0}, Asks: {1}, Bids: {2}, Open Interest: {3}, Blocks: {4}, Sweeps: {5}, Large Trades: {6}"
+            (dataMsgs, txtMsgs, queueDepth) = self.__client.get_stats()
+            client.log("Client Stats - Data Messages: {0}, Text Messages: {1}, Queue Depth: {2}".format(dataMsgs, txtMsgs, queueDepth))
+            client.log(
+                "App Stats - Trades: {0}, Quotes: {1}, Refreshes: {2}, Blocks: {3}, Sweeps: {4}, Large Trades: {5}, Unusual Sweeps: {6}"
                 .format(
                     trade_count,
-                    ask_count,
-                    bid_count,
-                    open_interest_count,
+                    quote_count,
+                    refresh_count,
                     block_count,
                     sweep_count,
-                    large_trade_count))
+                    large_trade_count,
+                    unusual_sweep_count))
 
-# Your config object MUST include the 'apiKey' and 'provider', at a minimum
-config : client.Config = client.Config(
-    apiKey = "",
-    provider = client.Providers.OPRA,
-    numThreads = 2,
-    symbols = ["AAPL"], # this is a static list of symbols (options contracts or option chains) that will automatically be subscribed to when the client starts
-    logLevel = client.LogLevel.INFO)
+
+# Your config object MUST include the 'api_key' and 'provider', at a minimum
+config: client.Config = client.Config(
+    api_key="",
+    provider=client.Providers.OPRA,
+    num_threads=8,
+    symbols=["AAPL"],
+    # this is a static list of symbols (options contracts or option chains) that will automatically be subscribed to when the client starts
+    log_level=client.LogLevel.INFO)
 
 # Register only the callbacks that you want.
-# Take special care when registering the 'onQuote' handler as it will increase throughput by ~10x
-intrinioRealtimeOptionsClient : client.Client = client.Client(config, onTrade = on_trade)
+# Take special care when registering the 'on_quote' handler as it will increase throughput by ~10x
+intrinioRealtimeOptionsClient: client.Client = client.Client(config, on_trade=on_trade, on_quote=on_quote, on_refresh=on_refresh, on_unusual_activity=on_unusual_activity)
 
-# Use this to subscribe to the entire univers of symbols (option contracts). This requires special permission.
-#intrinioRealtimeOptionsClient.joinLobby()
+# Use this to subscribe to the entire universe of symbols (option contracts). This requires special permission.
+# intrinioRealtimeOptionsClient.join_firehose()
 
-# Use this to subscribe, dynamically, to an option chain (all option contracts for a given underlying symbol).
-#intrinioRealtimeOptionsClient.join("AAPL")
+# Use this to subscribe, dynamically, to an option chain (all option contracts for a given underlying contract).
+# intrinioRealtimeOptionsClient.join("AAPL")
 
 # Use this to subscribe, dynamically, to a specific option contract.
-#intrinioRealtimeOptionsClient.join("AAP___230616P00250000")
+# intrinioRealtimeOptionsClient.join("AAP___230616P00250000")
 
 # Use this to subscribe, dynamically, a list of specific option contracts or option chains.
-#intrinioRealtimeOptionsClient.join("GOOG__220408C02870000", "MSFT__220408C00315000", "AAPL__220414C00180000", "TSLA", "GE")
+# intrinioRealtimeOptionsClient.join("GOOG__220408C02870000", "MSFT__220408C00315000", "AAPL__220414C00180000", "TSLA", "GE")
 
 stop_event = Event()
 
+
 def on_kill_process(sig, frame):
-    client.Log("Sample Application - Stopping")
+    client.log("Sample Application - Stopping")
     stop_event.set()
     intrinioRealtimeOptionsClient.stop()
     sys.exit(0)
 
+
 signal.signal(signal.SIGINT, on_kill_process)
 
-summarize_thread = Summarize(stop_event,intrinioRealtimeOptionsClient)
+summarize_thread = Summarize(stop_event, intrinioRealtimeOptionsClient)
 summarize_thread.start()
 
 intrinioRealtimeOptionsClient.start()
 
-time.sleep(60*60)
+time.sleep(60 * 60)
 # sigint, or ctrl+c, during the thread wait will also perform the same below code.
-on_kill_process(None,None)
+on_kill_process(None, None)
 ```
 
 ## Handling Quotes
 
 There are millions of options contracts, each with their own feed of activity.
-We highly encourage you to make your onTrade, onQuote, onUnusualActivity, and onOpenInterest methods has short as possible and follow a queue pattern so your app can handle the large volume of activity.
+We highly encourage you to make your onTrade, onQuote, onUnusualActivity, and onRefresh methods as short as possible and follow a queue pattern so your app can handle the large volume of activity.
 Note that quotes (ask and bid updates) comprise 99% of the volume of the entire feed. Be cautious when deciding to receive quote updates.
 
 ## Providers
@@ -169,97 +186,110 @@ Currently, Intrinio offers realtime data for this SDK from the following provide
 
 ```python
 class Trade:
-    def __init__(self, symbol : str, price : float, size : int, totalVolume : int, timestamp : float):
-        self.symbol : str = symbol
-        self.price : float = price
-        self.size : int = size
-        self.totalVolume : int = totalVolume
-        self.timestamp : float = timestamp
+    def __init__(self, contract: str, price: float, size: int, timestamp: float, total_volume: int, ask_price_at_execution: float, bid_price_at_execution: float, underlying_price_at_execution: float):
+        self.contract: str = contract
+        self.price: float = price
+        self.size: int = size
+        self.timestamp: float = timestamp
+        self.total_volume: int = total_volume
+        self.ask_price_at_execution = ask_price_at_execution
+        self.bid_price_at_execution = bid_price_at_execution
+        self.underlying_price_at_execution = underlying_price_at_execution
 ```
 
-* **symbol** - Identifier for the options contract.  This includes the ticker symbol, put/call, expiry, and strike price.
+* **contract** - Identifier for the options contract.  This includes the ticker symbol, put/call, expiry, and strike price.
 * **price** - the price in USD
 * **size** - the size of the last trade in hundreds (each contract is for 100 shares).
-* **totalVolume** - The number of contracts traded so far today.
+* **total_volume** - The number of contracts traded so far today.
 * **timestamp** - a Unix timestamp (with microsecond precision)
+* **ask_price_at_execution** - the contract ask price in USD at the time of execution.
+* **bid_price_at_execution** - the contract bid price in USD at the time of execution.
+* **underlying_price_at_execution** - the contract's underlying security price in USD at the time of execution.
 
 
 ### Quote Message
 
 ```python
 class Quote:
-    def __init__(self, symbol : str, type : QuoteType, price : float, size : int, timestamp : float):
-        self.symbol : str = symbol
-        self.type : QuoteType = type
-        self.price : float = price
-        self.size : int = size
-        self.timestamp : float = timestamp
+    def __init__(self, contract: str, ask_price: float, ask_size: int, bid_price: float, bid_size: int, timestamp: float):
+        self.contract: str = contract
+        self.ask_price: float = ask_price
+        self.bid_price: float = bid_price
+        self.ask_size: int = ask_size
+        self.bid_size: int = bid_size
+        self.timestamp: float = timestamp
 ```
 
-* **type** - the quote type
-  *    **`ask`** - represents an ask type
-  *    **`bid`** - represents a bid type  
-* **symbol** - Identifier for the options contract.  This includes the ticker symbol, put/call, expiry, and strike price.
-* **price** - the price in USD
-* **size** - the size of the last ask or bid in hundreds (each contract is for 100 shares).
+* **contract** - Identifier for the options contract.  This includes the ticker symbol, put/call, expiry, and strike price.
+* **ask_price** - the ask price in USD
+* **ask_size** - the size of the last ask in hundreds (each contract is for 100 shares).
+* **bid_price** - the bid price in USD
+* **bid_size** - the size of the last bid in hundreds (each contract is for 100 shares).
 * **timestamp** - a Unix timestamp (with microsecond precision)
 
 
-### Open Interest Message
+### Refresh Message
 
 ```python
-class OpenInterest:
-    def __init__(self, symbol : str, openInterest : int, timestamp : float):
-        self.symbol : str = symbol
-        self.openInterest : int = openInterest
-        self.timestamp : float = timestamp
+class Refresh:
+    def __init__(self, contract: str, open_interest: int, open_price: float, close_price: float, high_price: float, low_price: float):
+        self.contract: str = contract
+        self.open_interest: int = open_interest
+        self.open_price: float = open_price
+        self.close_price: float = close_price
+        self.high_price: float = high_price
+        self.low_price: float = low_price
 ```
 
-* **symbol** - Identifier for the options contract.  This includes the ticker symbol, put/call, expiry, and strike price.
-* **timestamp** - a Unix timestamp (with microsecond precision)
+* **contract** - Identifier for the options contract.  This includes the ticker symbol, put/call, expiry, and strike price.
 * **openInterest** - the total quantity of opened contracts as reported at the start of the trading day
+* **open_price** - the open price in USD
+* **close_price** - the close price in USD
+* **high_price** - the daily high price in USD
+* **low_price** - the daily low price in USD
 
 ### Unusual Activity Message
 ```python
 class UnusualActivity:
     def __init__(self,
-        symbol : str,
-        type : UnusualActivityType,
-        sentiment : UnusualActivitySentiment,
-        totalValue : float,
-        totalSize : int,
-        averagePrice : float,
-        askAtExecution : float,
-        bidAtExecution : float,
-        priceAtExecution : float,
-        timestamp : float):
-        self.symbol : str = symbol
-        self.type : UnusualActivityType = type
-        self.sentiment : UnusualActivitySentiment = sentiment
-        self.totalValue : float = totalValue
-        self.totalSize : int = totalSize
-        self.averagePrice : float = averagePrice
-        self.askAtExecution : float = askAtExecution
-        self.bidAtExecution : float = bidAtExecution
-        self.priceAtExecution : float = priceAtExecution
-        self.timestamp : float = timestamp
+                 contract: str,
+                 activity_type: UnusualActivityType,
+                 sentiment: UnusualActivitySentiment,
+                 total_value: float,
+                 total_size: int,
+                 average_price: float,
+                 ask_price_at_execution: float,
+                 bid_price_at_execution: float,
+                 underlying_price_at_execution: float,
+                 timestamp: float):
+        self.contract: str = contract
+        self.activity_type: UnusualActivityType = activity_type
+        self.sentiment: UnusualActivitySentiment = sentiment
+        self.total_value: float = total_value
+        self.total_size: int = total_size
+        self.average_price: float = average_price
+        self.ask_price_at_execution: float = ask_price_at_execution
+        self.bid_price_at_execution: float = bid_price_at_execution
+        self.underlying_price_at_execution: float = underlying_price_at_execution
+        self.timestamp: float = timestamp
 ```
 
-* **Symbol** - Identifier for the options contract.  This includes the ticker symbol, put/call, expiry, and strike price.
-* **Type** - The type of unusual activity that was detected
-  *    **`Block`** - represents an 'block' trade
-  *    **`Sweep`** - represents an intermarket sweep
-  *    **`Large`** - represents a trade of at least $100,000
-* **Sentiment** - The sentiment of the unusual activity event
+* **contract** - Identifier for the options contract.  This includes the ticker symbol, put/call, expiry, and strike price.
+* **activity_type** - The type of unusual activity that was detected
+  * **`Block`** - represents an 'block' trade
+  * **`Sweep`** - represents an intermarket sweep
+  * **`Large`** - represents a trade of at least $100,000
+  * **`UnusualSweep`** - represents an unusually large sweep near market open
+* **sentiment** - The sentiment of the unusual activity event
   *    **`Neutral`** - Reflects a minimal expected price change
   *    **`Bullish`** - Reflects an expected positive (upward) change in price
   *    **`Bearish`** - Reflects an expected negative (downward) change in price
-* **TotalValue** - The total value of the trade in USD. 'Sweeps' and 'blocks' can be comprised of multiple trades. This is the value of the entire event.
-* **TotalValue** - The total size of the trade in number of contracts. 'Sweeps' and 'blocks' can be comprised of multiple trades. This is the total number of contracts exchanged during the event.
-* **AveragePrice** - The average price at which the trade was executed. 'Sweeps' and 'blocks' can be comprised of multiple trades. This is the average trade price for the entire event.
-* **AskAtExecution** - The 'ask' price of the underlying at execution of the trade event.
-* **BidAtExecution** - The 'bid' price of the underlying at execution of the trade event.
-* **PriceAtExecution** - The last trade price of the underlying at execution of the trade event.
+* **total_value** - The total value of the trade in USD. 'Sweeps' and 'blocks' can be comprised of multiple trades. This is the value of the entire event.
+* **total_size** - The total size of the trade in number of contracts. 'Sweeps' and 'blocks' can be comprised of multiple trades. This is the total number of contracts exchanged during the event.
+* **average_price** - The average price at which the trade was executed. 'Sweeps' and 'blocks' can be comprised of multiple trades. This is the average trade price for the entire event.
+* **ask_price_at_execution** - The 'ask' price of the underlying at execution of the trade event.
+* **bid_price_at_execution** - The 'bid' price of the underlying at execution of the trade event.
+* **underlying_price_at_execution** - The last trade price of the underlying at execution of the trade event.
 * **Timestamp** - a Unix timestamp (with microsecond precision).
 
 ## API Keys
@@ -275,7 +305,7 @@ The first thing that you'll do is create a new `Client` object, passing in a ser
 After a `Client` object has been created, you may subscribe to receive feed updates from the server.
 You may subscribe to static list of symbols (a mixed list of option contracts and/or option chains). 
 Or, you may subscribe, dynamically, to option contracts, option chains, or a mixed list thereof.
-It is also possible to subscribe to the entire universe of option contracts by switching the `Provider` to "OPRA_FIREHOSE" (in the config object) and calling `joinLobby`.
+It is also possible to subscribe to the entire universe of option contracts by switching the `Provider` to "OPRA_FIREHOSE" (in the config object) and calling `join_firehose`.
 The volume of data provided by the `Firehose` exceeds 100Mbps and requires special authorization.
 After subscribing, using your starting list of symbols, you will call the `start` method. The client will immediately attempt to authorize your API key (provided in the config object). If authoriztion is successful, the necessary connection(s) will be opened.
 If you are using the non-firehose feed, you may update your subscriptions on the fly, using the `join` and `leave` methods.
@@ -284,12 +314,12 @@ If you wish to perform a graceful shutdown of the application, please call the `
 
 ### Methods
 
-`client : Client = Client(config : Config, onTrade : Callable[[Trade], None], onQuote : Callable[[Quote], None] = None, onOpenInterest : Callable[[OpenInterest], None] = None, onUnusualActivity : Callable[[UnusualActivity],None] = None)` - Creates an Intrinio Real-Time client.
+`client : Client = Client(config : Config, on_trade : Callable[[Trade], None], on_quote : Callable[[Quote], None] = None, on_refresh : Callable[[Refresh], None] = None, on_unusual_activity : Callable[[UnusualActivity],None] = None)` - Creates an Intrinio Real-Time client.
 * **Parameter** `config`: The configuration to be used by the client.
-* **Parameter** `onTrade`: The Callable accepting trades. If no `onTrade` callback is provided, you will not receive trade updates from the server.
-* **Parameter** `onQuote`: The Callable accepting quotes. If no `onQuote` callback is provided, you will not receive quote (ask, bid) updates from the server.
-* **Parameter** `onOpenInterest`: The Callable accepting open interest messages. If no `onOpenInterest` callback is provided, you will not receive open interest data from the server. Note: open interest data is only updated at the beginning of every trading day. If this callback is provided you will recieve an update immediately, as well as every 15 minutes (approx).
-* **Parameter** `onUnusualActivity`: The Callable accepting unusual activity events. If no `onUnusualActivity` callback is provided, you will not receive unusual activity updates from the server.
+* **Parameter** `on_trade`: The Callable accepting trades. If no `on_trade` callback is provided, you will not receive trade updates from the server.
+* **Parameter** `on_quote`: The Callable accepting quotes. If no `on_quote` callback is provided, you will not receive quote (ask, bid) updates from the server.
+* **Parameter** `on_refresh`: The Callable accepting refresh messages. If no `on_refresh` callback is provided, you will not receive open interest, high, low, open, or close data from the server. Note: open interest data is only updated at the beginning of every trading day. If this callback is provided you will recieve an update immediately, as well as every 15 minutes (approx).
+* **Parameter** `on_unusual_activity`: The Callable accepting unusual activity events. If no `on_unusual_activity` callback is provided, you will not receive unusual activity updates from the server.
 
 ---------
 
@@ -302,13 +332,13 @@ If you wish to perform a graceful shutdown of the application, please call the `
 
 `client.join()` - Joins channel(s) configured in config.json.
 `client.join(*channels)` - Joins the provided channel or channels. E.g. "AAPL", "GOOG__210917C01040000"
-`client.joinLobby()` - Joins the 'lobby' (aka. firehose) channel. The provider must be set to `OPRA_FIREHOSE` for this to work. This requires special account permissions.
+`client.join_firehose()` - Joins the firehose channel. This requires special account permissions.
 
 ---------
 
-`client.leave()` - Leaves all joined channels/subscriptions, including `lobby`.
+`client.leave()` - Leaves all joined channels/subscriptions, including firehose.
 `client.leave(*channels)` - Leaves the specified channel or channels. E.g. "AAPL" or "GOOG__210917C01040000"
-`client.leaveLobby()` Leaves the `lobby` channel 
+`client.leave_firehose()` Leaves the firehose channel 
 
 ---------
 `client.stop();` - Stops the Intrinio Realtime WebSocket Client. This method will leave all joined channels, stop all threads, and gracefully close the websocket connection(s).
@@ -321,7 +351,7 @@ If you wish to perform a graceful shutdown of the application, please call the `
 class Config:
     def __init__(self, apiKey : str, provider : Providers, numThreads : int = 4, logLevel : LogLevel = LogLevel.INFO, manualIpAddress : str = None, symbols : set[str] = None):
         self.apiKey : str = apiKey
-        self.provider : Providers = provider # Providers.OPRA or Providers.OPRA_FIREHOSE (for subscribing to all channels)
+        self.provider : Providers = provider # Providers.OPRA or Providers.MANUAL
         self.numThreads : int = numThreads # At least 4 threads are recommended for 'FIREHOSE' connections
         self.manualIpAddress : str = manualIpAddress
         self.symbols : list[str] = symbols # Static list of symbols to use
