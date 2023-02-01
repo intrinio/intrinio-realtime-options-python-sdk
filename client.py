@@ -426,18 +426,28 @@ def _transform_contract_to_old(alternate_formatted_contract: bytes) -> str:
     return bytes(contract_chars).decode('ascii')
 
 
-def _heartbeat_fn(ws_lock: threading.Lock, web_socket: _WebSocket):
-    _log.debug("Starting heartbeat")
+def _heartbeat_fn(ws_lock: threading.Lock, get_web_socket: Callable[[], _WebSocket]):
+    _log.debug("Starting heartbeat thread")
+    web_socket = None
+    if get_web_socket is not None:
+        web_socket = get_web_socket()
+    else:
+        _log.info("None was sent to heartbeat thread for get_web_socket parameter!")
+
     while not _stopFlag.is_set():
+        web_socket = get_web_socket()
         time.sleep(_HEARTBEAT_INTERVAL)
-        _log.debug("Sending heartbeat")
+        _log.debug("About to send heartbeat.")
         ws_lock.acquire()
         try:
-            if web_socket and not _stopFlag.is_set():
+            if (web_socket is not None) and (not _stopFlag.is_set()):
+                _log.debug("Sending heartbeat.")
                 web_socket.send_heartbeat()
+            else:
+                _log.debug("Did not send heartbeat.")
         finally:
             ws_lock.release()
-    _log.debug("Heartbeat stopped")
+    _log.debug("Heartbeat thread stopped.")
 
 
 def _get_seconds_from_epoch_from_ticks(ticks: int) -> float:
@@ -644,7 +654,7 @@ class Client:
             raise ValueError("You must provide a valid API key")
         if (not config.provider) or (not isinstance(config.provider, Providers)):
             raise ValueError("You must specify a valid provider")
-        if ((config.provider == Providers.MANUAL) or (config.provider == Providers.MANUAL_FIREHOSE)) and (
+        if ((config.provider == Providers.MANUAL)) and (
                 (not config.manual_ip_address) or (not isinstance(config.manual_ip_address, str))):
             raise ValueError("You must specify an IP address for a manual configuration")
         if on_trade:
@@ -688,7 +698,7 @@ class Client:
         self.__t_lock: threading.Lock = threading.Lock()
         self.__ws_lock: threading.Lock = threading.Lock()
         self.__heartbeat_thread: threading.Thread = threading.Thread(None, _heartbeat_fn,
-                                                                     args=[self.__ws_lock, self.__webSocket],
+                                                                     args=[self.__ws_lock, self.__get_websocket],
                                                                      daemon=True)
         self.__worker_threads: list[threading.Thread] = [threading.Thread(None,
                                                                           _thread_fn,
@@ -702,10 +712,13 @@ class Client:
         self.__ws_lock.acquire()
         ready: bool = True
         try:
-            ready = self.__webSocket.isReady
+            ready = (self.__webSocket is not None) and (self.__webSocket.isReady)
         finally:
             self.__ws_lock.release()
         return ready
+
+    def __get_websocket(self) -> _WebSocket:
+        return self.__webSocket
 
     def __get_auth_url(self) -> str:
         if self.__provider == Providers.OPRA:
@@ -786,8 +799,7 @@ class Client:
             while not self.__all_ready():
                 time.sleep(1.0)
         for (symbol) in symbols:
-            if symbol not in self.__channels:
-                self.__join(symbol)
+            self.__join(symbol)
 
     def join_firehose(self):
         if "$FIREHOSE" in self.__channels:

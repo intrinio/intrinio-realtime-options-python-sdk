@@ -95,7 +95,7 @@ config: client.Config = client.Config(
     api_key="",
     provider=client.Providers.OPRA,
     num_threads=8,
-    symbols=["AAPL"],
+    symbols=["AAPL", "BRKB__230217C00300000"],
     # this is a static list of symbols (options contracts or option chains) that will automatically be subscribed to when the client starts
     log_level=client.LogLevel.INFO)
 
@@ -131,6 +131,7 @@ summarize_thread = Summarize(stop_event, intrinioRealtimeOptionsClient)
 summarize_thread.start()
 
 intrinioRealtimeOptionsClient.start()
+intrinioRealtimeOptionsClient.join()
 
 time.sleep(60 * 60)
 # sigint, or ctrl+c, during the thread wait will also perform the same below code.
