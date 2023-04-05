@@ -6,6 +6,7 @@ SDK for working with Intrinio's realtime options feed via WebSocket
 ## Requirements
 
 - Python 3.10+
+- You need https://pypi.org/project/websocket-client/, not https://pypi.org/project/websocket/.
 
 ## Installation
 
