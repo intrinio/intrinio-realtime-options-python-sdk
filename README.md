@@ -8,6 +8,13 @@ SDK for working with Intrinio's realtime options feed via WebSocket
 - Python 3.10+
 - You need https://pypi.org/project/websocket-client/, not https://pypi.org/project/websocket/.
 
+## Docker
+Add your API key to the example_app.py file, then
+```
+docker compose build
+docker compose run client
+```
+
 ## Installation
 
 Go to [Release](https://github.com/intrinio/intrinio-realtime-options-python-sdk/releases/), download the zip, extract client.py, and reference it in your project.
