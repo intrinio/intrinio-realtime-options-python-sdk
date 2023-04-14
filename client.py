@@ -77,8 +77,8 @@ class Quote:
                        self.timestamp)
 
     def get_strike_price(self) -> float:
-        whole: int = (int(self.contract[13]) - int('0')) * 10000 + (int(self.contract[14]) - int('0')) * 1000 + (int(self.contract[15]) - int('0')) * 100 + (int(self.contract[16]) - int('0')) * 10 + (int(self.contract[17]) - int('0'))
-        part: float = float(int(self.contract[18]) - int('0')) * 0.1 + float(int(self.contract[19]) - int('0')) * 0.01 + float(int(self.contract[20]) - int('0')) * 0.001
+        whole: int = (ord(self.contract[13]) - ord('0')) * 10000 + (ord(self.contract[14]) - ord('0')) * 1000 + (ord(self.contract[15]) - ord('0')) * 100 + (ord(self.contract[16]) - ord('0')) * 10 + (ord(self.contract[17]) - ord('0'))
+        part: float = float(ord(self.contract[18]) - ord('0')) * 0.1 + float(ord(self.contract[19]) - ord('0')) * 0.01 + float(ord(self.contract[20]) - ord('0')) * 0.001
         return float(whole) + part
 
     def is_put(self) -> bool:
@@ -117,8 +117,8 @@ class Trade:
                        self.underlying_price_at_execution)
 
     def get_strike_price(self) -> float:
-        whole: int = (int(self.contract[13]) - int('0')) * 10000 + (int(self.contract[14]) - int('0')) * 1000 + (int(self.contract[15]) - int('0')) * 100 + (int(self.contract[16]) - int('0')) * 10 + (int(self.contract[17]) - int('0'))
-        part: float = float(int(self.contract[18]) - int('0')) * 0.1 + float(int(self.contract[19]) - int('0')) * 0.01 + float(int(self.contract[20]) - int('0')) * 0.001
+        whole: int = (ord(self.contract[13]) - ord('0')) * 10000 + (ord(self.contract[14]) - ord('0')) * 1000 + (ord(self.contract[15]) - ord('0')) * 100 + (ord(self.contract[16]) - ord('0')) * 10 + (ord(self.contract[17]) - ord('0'))
+        part: float = float(ord(self.contract[18]) - ord('0')) * 0.1 + float(ord(self.contract[19]) - ord('0')) * 0.01 + float(ord(self.contract[20]) - ord('0')) * 0.001
         return float(whole) + part
 
     def is_put(self) -> bool:
@@ -168,8 +168,8 @@ class Refresh:
                        self.low_price)
 
     def get_strike_price(self) -> float:
-        whole: int = (int(self.contract[13]) - int('0')) * 10000 + (int(self.contract[14]) - int('0')) * 1000 + (int(self.contract[15]) - int('0')) * 100 + (int(self.contract[16]) - int('0')) * 10 + (int(self.contract[17]) - int('0'))
-        part: float = float(int(self.contract[18]) - int('0')) * 0.1 + float(int(self.contract[19]) - int('0')) * 0.01 + float(int(self.contract[20]) - int('0')) * 0.001
+        whole: int = (ord(self.contract[13]) - ord('0')) * 10000 + (ord(self.contract[14]) - ord('0')) * 1000 + (ord(self.contract[15]) - ord('0')) * 100 + (ord(self.contract[16]) - ord('0')) * 10 + (ord(self.contract[17]) - ord('0'))
+        part: float = float(ord(self.contract[18]) - ord('0')) * 0.1 + float(ord(self.contract[19]) - ord('0')) * 0.01 + float(ord(self.contract[20]) - ord('0')) * 0.001
         return float(whole) + part
 
     def is_put(self) -> bool:
@@ -222,8 +222,8 @@ class UnusualActivity:
                         self.timestamp)
 
     def get_strike_price(self) -> float:
-        whole: int = (int(self.contract[13]) - int('0')) * 10000 + (int(self.contract[14]) - int('0')) * 1000 + (int(self.contract[15]) - int('0')) * 100 + (int(self.contract[16]) - int('0')) * 10 + (int(self.contract[17]) - int('0'))
-        part: float = float(int(self.contract[18]) - int('0')) * 0.1 + float(int(self.contract[19]) - int('0')) * 0.01 + float(int(self.contract[20]) - int('0')) * 0.001
+        whole: int = (ord(self.contract[13]) - ord('0')) * 10000 + (ord(self.contract[14]) - ord('0')) * 1000 + (ord(self.contract[15]) - ord('0')) * 100 + (ord(self.contract[16]) - ord('0')) * 10 + (ord(self.contract[17]) - ord('0'))
+        part: float = float(ord(self.contract[18]) - ord('0')) * 0.1 + float(ord(self.contract[19]) - ord('0')) * 0.01 + float(ord(self.contract[20]) - ord('0')) * 0.001
         return float(whole) + part
 
     def is_put(self) -> bool:
