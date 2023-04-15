@@ -738,7 +738,7 @@ class Client:
 
     def __try_set_token(self) -> bool:
         _log.info("Authorizing...")
-        headers = {"Client-Information": "IntrinioOptionsPythonSDKv2.1"}
+        headers = {"Client-Information": "IntrinioOptionsPythonSDKv2.2"}
         try:
             response: requests.Response = requests.get(self.__get_auth_url(), headers=headers, timeout=1)
             if response.status_code != 200:
