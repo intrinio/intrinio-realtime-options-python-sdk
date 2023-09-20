@@ -77,8 +77,8 @@ class Quote:
                        self.timestamp)
 
     def get_strike_price(self) -> float:
-        whole: int = (self.contract[13] - '0') * 10000 + (self.contract[14] - '0') * 1000 + (self.contract[15] - '0') * 100 + (self.contract[16] - '0') * 10 + (self.contract[17] - '0')
-        part: float = (self.contract[18] - '0') * 0.1 + (self.contract[19] - '0') * 0.01 + (self.contract[20] - '0') * 0.001
+        whole: int = (ord(self.contract[13]) - ord('0')) * 10000 + (ord(self.contract[14]) - ord('0')) * 1000 + (ord(self.contract[15]) - ord('0')) * 100 + (ord(self.contract[16]) - ord('0')) * 10 + (ord(self.contract[17]) - ord('0'))
+        part: float = float(ord(self.contract[18]) - ord('0')) * 0.1 + float(ord(self.contract[19]) - ord('0')) * 0.01 + float(ord(self.contract[20]) - ord('0')) * 0.001
         return float(whole) + part
 
     def is_put(self) -> bool:
@@ -141,8 +141,8 @@ class Trade:
                        self.underlying_price_at_execution)
 
     def get_strike_price(self) -> float:
-        whole: int = (self.contract[13] - '0') * 10000 + (self.contract[14] - '0') * 1000 + (self.contract[15] - '0') * 100 + (self.contract[16] - '0') * 10 + (self.contract[17] - '0')
-        part: float = (self.contract[18] - '0') * 0.1 + (self.contract[19] - '0') * 0.01 + (self.contract[20] - '0') * 0.001
+        whole: int = (ord(self.contract[13]) - ord('0')) * 10000 + (ord(self.contract[14]) - ord('0')) * 1000 + (ord(self.contract[15]) - ord('0')) * 100 + (ord(self.contract[16]) - ord('0')) * 10 + (ord(self.contract[17]) - ord('0'))
+        part: float = float(ord(self.contract[18]) - ord('0')) * 0.1 + float(ord(self.contract[19]) - ord('0')) * 0.01 + float(ord(self.contract[20]) - ord('0')) * 0.001
         return float(whole) + part
 
     def is_put(self) -> bool:
@@ -192,8 +192,8 @@ class Refresh:
                        self.low_price)
 
     def get_strike_price(self) -> float:
-        whole: int = (self.contract[13] - '0') * 10000 + (self.contract[14] - '0') * 1000 + (self.contract[15] - '0') * 100 + (self.contract[16] - '0') * 10 + (self.contract[17] - '0')
-        part: float = (self.contract[18] - '0') * 0.1 + (self.contract[19] - '0') * 0.01 + (self.contract[20] - '0') * 0.001
+        whole: int = (ord(self.contract[13]) - ord('0')) * 10000 + (ord(self.contract[14]) - ord('0')) * 1000 + (ord(self.contract[15]) - ord('0')) * 100 + (ord(self.contract[16]) - ord('0')) * 10 + (ord(self.contract[17]) - ord('0'))
+        part: float = float(ord(self.contract[18]) - ord('0')) * 0.1 + float(ord(self.contract[19]) - ord('0')) * 0.01 + float(ord(self.contract[20]) - ord('0')) * 0.001
         return float(whole) + part
 
     def is_put(self) -> bool:
@@ -246,8 +246,8 @@ class UnusualActivity:
                         self.timestamp)
 
     def get_strike_price(self) -> float:
-        whole: int = (self.contract[13] - '0') * 10000 + (self.contract[14] - '0') * 1000 + (self.contract[15] - '0') * 100 + (self.contract[16] - '0') * 10 + (self.contract[17] - '0')
-        part: float = (self.contract[18] - '0') * 0.1 + (self.contract[19] - '0') * 0.01 + (self.contract[20] - '0') * 0.001
+        whole: int = (ord(self.contract[13]) - ord('0')) * 10000 + (ord(self.contract[14]) - ord('0')) * 1000 + (ord(self.contract[15]) - ord('0')) * 100 + (ord(self.contract[16]) - ord('0')) * 10 + (ord(self.contract[17]) - ord('0'))
+        part: float = float(ord(self.contract[18]) - ord('0')) * 0.1 + float(ord(self.contract[19]) - ord('0')) * 0.01 + float(ord(self.contract[20]) - ord('0')) * 0.001
         return float(whole) + part
 
     def is_put(self) -> bool:
@@ -765,7 +765,7 @@ class Client:
 
     def __try_set_token(self) -> bool:
         _log.info("Authorizing...")
-        headers = {"Client-Information": "IntrinioOptionsPythonSDKv2.1"}
+        headers = {"Client-Information": "IntrinioOptionsPythonSDKv2.2"}
         try:
             response: requests.Response = requests.get(self.__get_auth_url(), headers=headers, timeout=1)
             if response.status_code != 200:
