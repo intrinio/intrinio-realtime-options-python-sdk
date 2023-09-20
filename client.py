@@ -6,7 +6,7 @@ import requests
 import websocket
 import logging
 import struct
-import json
+#import json
 from collections.abc import Callable
 from enum import IntEnum, unique
 
@@ -94,24 +94,48 @@ class Quote:
         return self.contract[0:6].rstrip('_')
 
 
+@unique
+class Exchange(IntEnum):
+    NYSE_AMERICAN = ord('A')
+    BOSTON = ord('B')
+    CBOE = ord('C')
+    MIAMI_EMERALD = ord('D')
+    BATS_EDGX = ord('E')
+    ISE_GEMINI = ord('H')
+    ISE = ord('I')
+    MERCURY = ord('J')
+    MIAMI = ord('M')
+    MIAMI_PEARL = ord('O')
+    NYSE_ARCA = ord('P')
+    NASDAQ = ord('Q')
+    NASDAQ_BX = ord('T')
+    MEMX = ord('U')
+    CBOE_C2 = ord('W')
+    PHLX = ord('X')
+    BATS_BZX = ord('Z')
+
 class Trade:
-    def __init__(self, contract: str, price: float, size: int, timestamp: float, total_volume: int, ask_price_at_execution: float, bid_price_at_execution: float, underlying_price_at_execution: float):
+    def __init__(self, contract: str, exchange: Exchange, price: float, size: int, timestamp: float, total_volume: int, qualifiers: tuple, ask_price_at_execution: float, bid_price_at_execution: float, underlying_price_at_execution: float):
         self.contract: str = contract
+        self.exchange: Exchange = exchange
         self.price: float = price
         self.size: int = size
         self.timestamp: float = timestamp
         self.total_volume: int = total_volume
+        self.qualifiers: tuple = qualifiers
         self.ask_price_at_execution = ask_price_at_execution
         self.bid_price_at_execution = bid_price_at_execution
         self.underlying_price_at_execution = underlying_price_at_execution
 
     def __str__(self) -> str:
-        return "Trade (Contract: {0}, Price: {1:.2f}, Size: {2}, Timestamp: {3}, TotalVolume: {4}, AskPriceAtExecution: {5:.2f}, BidPriceAtExecution: {6:.2f}, UnderlyingPriceAtExecution: {7:.2f})"\
+        return "Trade (Contract: {0}, Exchange: {1}, Price: {2:.2f}, Size: {3}, Timestamp: {4}, TotalVolume: {5}, Qualifiers: {6}, AskPriceAtExecution: {7:.2f}, BidPriceAtExecution: {8:.2f}, UnderlyingPriceAtExecution: {9:.2f})"\
                .format(self.contract,
+                       self.exchange.name,
                        self.price,
                        self.size,
                        self.timestamp,
                        self.total_volume,
+                       self.qualifiers,
                        self.ask_price_at_execution,
                        self.bid_price_at_execution,
                        self.underlying_price_at_execution)
@@ -453,7 +477,6 @@ def _heartbeat_fn(ws_lock: threading.Lock, get_web_socket: Callable[[], _WebSock
 def _get_seconds_from_epoch_from_ticks(ticks: int) -> float:
     return float(ticks) / 1_000_000_000.0
 
-
 def _scale_value(value: int, scale_type: int) -> float:
     # if scale_type == 0x00:
     #     return float(value)  # divided by 1
@@ -574,6 +597,8 @@ def _thread_fn(index: int, data: queue.Queue,
                     #  ask price at execution [49-52] int32
                     #  bid price at execution [53-56] int32
                     #  underlying price at execution [57-60] int32
+                    #  qualifiers [61-64]
+                    #  exchange [65]
                     # https://docs.python.org/3/library/struct.html#format-characters
                     contract: str = _transform_contract_to_old(message[1:message[0]])
                     price: float = _scale_int32(struct.unpack_from('<l', message, 25)[0], message[23])
@@ -583,8 +608,10 @@ def _thread_fn(index: int, data: queue.Queue,
                     ask_price_at_execution: int = _scale_int32(struct.unpack_from('<l', message, 49)[0], message[23])
                     bid_price_at_execution: int = _scale_int32(struct.unpack_from('<l', message, 53)[0], message[23])
                     underlying_price_at_execution: int = _scale_int32(struct.unpack_from('<l', message, 57)[0], message[24])
+                    qualifiers: tuple = (message[61], message[62], message[63], message[64])
+                    exchange: Exchange = Exchange(message[65])
                     if on_trade:
-                        on_trade(Trade(contract, price, size, timestamp, total_volume, ask_price_at_execution, bid_price_at_execution, underlying_price_at_execution))
+                        on_trade(Trade(contract, exchange, price, size, timestamp, total_volume, qualifiers, ask_price_at_execution, bid_price_at_execution, underlying_price_at_execution))
                     start_index = start_index + _TRADE_MESSAGE_SIZE
                 elif msg_type > 2:  # Unusual Activity
                     message: bytes = datum[start_index:(start_index + _UNUSUAL_ACTIVITY_MESSAGE_SIZE)]
