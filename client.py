@@ -352,9 +352,6 @@ class _WebSocket(websocket.WebSocketApp):
             with _txtMsgLock:
                 global _txtMsgCount
                 _txtMsgCount += 1
-            if data == _EMPTY_STRING:
-                _log.debug("Heartbeat response received")
-            else:
                 _log.error("Error received: {0}".format(data))
 
     def start(self):
@@ -459,13 +456,11 @@ def _scale_uint64(value: int, scale_type: int) -> float:
     else:
         return _scale_value(value, scale_type)
 
-
 def _scale_int32(value: int, scale_type: int) -> float:
     if value == 2147483647 or value == -2147483648:
         return _NAN
     else:
         return _scale_value(value, scale_type)
-
 
 def _thread_fn(index: int, data: queue.Queue,
                on_trade: Callable[[Trade], None],
@@ -492,7 +487,6 @@ def _thread_fn(index: int, data: queue.Queue,
                     # 	bid price [32-35] int32
                     # 	bid size [36-39] uint32
                     # 	timestamp [40-47] uint64
-                    # https://docs.python.org/3/library/struct.html#format-characters
                     contract: str = _transform_contract_to_old(message[1:message[0]])
                     ask_price: float = _scale_int32(struct.unpack_from('<l', message, 24)[0], message[23])
                     ask_size: int = struct.unpack_from('<L', message, 28)[0]
@@ -519,7 +513,6 @@ def _thread_fn(index: int, data: queue.Queue,
                     #  underlying price at execution [57-60] int32
                     #  qualifiers [61-64]
                     #  exchange [65]
-                    # https://docs.python.org/3/library/struct.html#format-characters
                     contract: str = _transform_contract_to_old(message[1:message[0]])
                     price: float = _scale_int32(struct.unpack_from('<l', message, 25)[0], message[23])
                     size: int = struct.unpack_from('<L', message, 29)[0]
@@ -549,7 +542,6 @@ def _thread_fn(index: int, data: queue.Queue,
                     # bid price at execution [46-49] int32
                     # underlying price at execution [50-53] int32
                     # timestamp [54-61] uint64
-                    # https://docs.python.org/3/library/struct.html#format-characters
                     contract: str = _transform_contract_to_old(message[1:message[0]])
                     activity_type: UnusualActivityType = message[22]
                     sentiment: UnusualActivitySentiment = message[23]
@@ -589,7 +581,6 @@ def _thread_fn(index: int, data: queue.Queue,
         except queue.Empty:
             continue
     _log.debug("Worker thread {0} stopped".format(index))
-
 
 class Client:
     def __init__(self, config: Config, on_trade: Callable[[Trade], None], on_quote: Callable[[Quote], None] = None,
@@ -644,9 +635,6 @@ class Client:
         self.__data: queue.Queue = queue.Queue()
         self.__t_lock: threading.Lock = threading.Lock()
         self.__ws_lock: threading.Lock = threading.Lock()
-        self.__heartbeat_thread: threading.Thread = threading.Thread(None, _heartbeat_fn,
-                                                                     args=[self.__ws_lock, self.__get_websocket],
-                                                                     daemon=True)
         self.__worker_threads: list[threading.Thread] = [threading.Thread(None,
                                                                           _thread_fn,
                                                                           args=[i, self.__data, on_trade, on_quote, on_refresh, on_unusual_activity],
@@ -776,7 +764,6 @@ class Client:
         ws_url: str = self.__get_web_socket_url(token)
         self.__webSocket = _WebSocket(ws_url,
                                       self.__ws_lock,
-                                      self.__heartbeat_thread,
                                       self.__worker_threads,
                                       self.__get_channels,
                                       self.__get_token,
