@@ -6,12 +6,10 @@ import requests
 import websocket
 import logging
 import struct
-#import json
 from collections.abc import Callable
 from enum import IntEnum, unique
 
 _SELF_HEAL_BACKOFFS = [10, 30, 60, 300, 600]
-_HEARTBEAT_INTERVAL = 20
 _EMPTY_STRING = ""
 _TRADE_MESSAGE_SIZE = 72  # 61 used + 11 pad
 _QUOTE_MESSAGE_SIZE = 52  # 48 used + 4 pad
@@ -30,10 +28,8 @@ _log: logging.Logger = logging.getLogger('intrinio_realtime_options')
 _log.setLevel(logging.INFO)
 _log.addHandler(_logHandler)
 
-
 def log(message: str):
     _log.info(message)
-
 
 def do_backoff(fn: Callable[[None], bool]):
     i: int = 0
@@ -45,18 +41,15 @@ def do_backoff(fn: Callable[[None], bool]):
         backoff = _SELF_HEAL_BACKOFFS[i]
         success = fn()
 
-
 @unique
 class Providers(IntEnum):
     OPRA = 1
     MANUAL = 2
 
-
 @unique
 class LogLevel(IntEnum):
     DEBUG = logging.DEBUG
     INFO = logging.INFO
-
 
 class Quote:
     def __init__(self, contract: str, ask_price: float, ask_size: int, bid_price: float, bid_size: int, timestamp: float):
@@ -92,7 +85,6 @@ class Quote:
 
     def get_underlying_symbol(self) -> str:
         return self.contract[0:6].rstrip('_')
-
 
 @unique
 class Exchange(IntEnum):
@@ -157,13 +149,11 @@ class Trade:
     def get_underlying_symbol(self) -> str:
         return self.contract[0:6].rstrip('_')
 
-
 @unique
 class UnusualActivitySentiment(IntEnum):
     NEUTRAL = 0
     BULLISH = 1
     BEARISH = 2
-
 
 @unique
 class UnusualActivityType(IntEnum):
@@ -171,7 +161,6 @@ class UnusualActivityType(IntEnum):
     SWEEP = 4
     LARGE = 5
     UNUSUAL_SWEEP = 6
-
 
 class Refresh:
     def __init__(self, contract: str, open_interest: int, open_price: float, close_price: float, high_price: float, low_price: float):
@@ -207,7 +196,6 @@ class Refresh:
 
     def get_underlying_symbol(self) -> str:
         return self.contract[0:6].rstrip('_')
-
 
 class UnusualActivity:
     def __init__(self,
@@ -262,7 +250,6 @@ class UnusualActivity:
     def get_underlying_symbol(self) -> str:
         return self.contract[0:6].rstrip('_')
 
-
 def _get_option_mask(use_on_trade: bool, use_on_quote: bool, use_on_refresh: bool, use_on_unusual_activity: bool) -> int:
     mask: int = 0
     if use_on_trade:
@@ -275,12 +262,10 @@ def _get_option_mask(use_on_trade: bool, use_on_quote: bool, use_on_refresh: boo
         mask |= 0b1000
     return mask
 
-
 class _WebSocket(websocket.WebSocketApp):
     def __init__(self,
                  ws_url: str,
                  ws_lock: threading.Lock,
-                 heartbeat_thread: threading.Thread,
                  worker_threads: list[threading.Thread],
                  get_channels: Callable[[None], set[tuple[str, bool]]],
                  get_token: Callable[[None], str],
@@ -292,7 +277,6 @@ class _WebSocket(websocket.WebSocketApp):
                  data_queue: queue.Queue):
         super().__init__(ws_url, on_open=self.__on_open, on_close=self.__on_close, on_data=self.__on_data, on_error=self.__on_error)
         self.__wsLock: threading.Lock = ws_lock
-        self.__heartbeat_thread: threading.Thread = heartbeat_thread
         self.__worker_threads: list[threading.Thread] = worker_threads
         self.__get_channels: Callable[[None], set[tuple[str, bool]]] = get_channels
         self.__get_token: Callable[[None], str] = get_token
@@ -312,8 +296,6 @@ class _WebSocket(websocket.WebSocketApp):
         try:
             self.isReady = True
             self.__is_reconnecting = False
-            if not self.__heartbeat_thread.is_alive():
-                self.__heartbeat_thread.start()
             for worker in self.__worker_threads:
                 if not worker.is_alive():
                     worker.start()
@@ -382,10 +364,6 @@ class _WebSocket(websocket.WebSocketApp):
     def stop(self):
         super().close()
 
-    def send_heartbeat(self):
-        if self.isReady:
-            super().send(_EMPTY_STRING, websocket.ABNF.OPCODE_TEXT)
-
     def send(self, message: str):
         super().send(message, websocket.ABNF.OPCODE_TEXT)
 
@@ -394,7 +372,6 @@ class _WebSocket(websocket.WebSocketApp):
 
     def reset(self):
         self.__last_reset = time.time()
-
 
 class Config:
     def __init__(self, api_key: str, provider: Providers, num_threads: int = 4, log_level: LogLevel = LogLevel.INFO,
@@ -405,7 +382,6 @@ class Config:
         self.manual_ip_address: str = manual_ip_address
         self.symbols: list[str] = symbols
         self.log_level: LogLevel = log_level
-
 
 def _transform_contract_to_new(contract: str) -> str:
     if (len(contract) <= 9) or (contract.find('.') >= 9):
@@ -427,17 +403,14 @@ def _transform_contract_to_new(contract: str) -> str:
             whole_price=whole_price,
             decimal_price=decimal_price)
 
-
 def _copy_to(src: list, dest: list, dest_index: int):
     for i in range(0, len(src)):
         dest[i + dest_index] = src[i]
-
 
 def _transform_contract_to_old(alternate_formatted_contract: bytes) -> str:
     # Transform from server format to normal format
     # From this: AAPL_201016C100.00 or ABC_201016C100.003
     # To this: AAPL__201016C00100000 or ABC___201016C00100003
-
     contract_chars: list = [ord('_'), ord('_'), ord('_'), ord('_'), ord('_'), ord('_'), ord('2'), ord('2'), ord('0'), ord('1'), ord('0'), ord('1'), ord('C'), ord('0'), ord('0'), ord('0'), ord('0'), ord('0'), ord('0'), ord('0'), ord('0')]
     underscore_index: int = alternate_formatted_contract.find(ord('_'))
     decimal_index: int = alternate_formatted_contract[9:].find(ord('.')) + 9  # ignore decimals in tickersymbol
@@ -446,64 +419,12 @@ def _transform_contract_to_old(alternate_formatted_contract: bytes) -> str:
     _copy_to(alternate_formatted_contract[underscore_index+7:underscore_index+8], contract_chars, 12)  # copy put / call
     _copy_to(alternate_formatted_contract[underscore_index+8:decimal_index], contract_chars, 18 - (decimal_index - underscore_index - 8))  # whole number copy
     _copy_to(alternate_formatted_contract[decimal_index+1:], contract_chars, 18)  # decimal number copy
-
     return bytes(contract_chars).decode('ascii')
-
-
-def _heartbeat_fn(ws_lock: threading.Lock, get_web_socket: Callable[[], _WebSocket]):
-    _log.debug("Starting heartbeat thread")
-    web_socket = None
-    if get_web_socket is not None:
-        web_socket = get_web_socket()
-    else:
-        _log.info("None was sent to heartbeat thread for get_web_socket parameter!")
-
-    while not _stopFlag.is_set():
-        web_socket = get_web_socket()
-        time.sleep(_HEARTBEAT_INTERVAL)
-        _log.debug("About to send heartbeat.")
-        ws_lock.acquire()
-        try:
-            if (web_socket is not None) and (not _stopFlag.is_set()):
-                _log.debug("Sending heartbeat.")
-                web_socket.send_heartbeat()
-            else:
-                _log.debug("Did not send heartbeat.")
-        finally:
-            ws_lock.release()
-    _log.debug("Heartbeat thread stopped.")
-
 
 def _get_seconds_from_epoch_from_ticks(ticks: int) -> float:
     return float(ticks) / 1_000_000_000.0
 
 def _scale_value(value: int, scale_type: int) -> float:
-    # if scale_type == 0x00:
-    #     return float(value)  # divided by 1
-    # elif scale_type == 0x01:
-    #     return float(value) / 10.0
-    # elif scale_type == 0x02:
-    #     return float(value) / 100.0
-    # elif scale_type == 0x03:
-    #     return float(value) / 1_000.0
-    # elif scale_type == 0x04:
-    #     return float(value) / 10_000.0
-    # elif scale_type == 0x05:
-    #     return float(value) / 100_000.0
-    # elif scale_type == 0x06:
-    #     return float(value) / 1_000_000.0
-    # elif scale_type == 0x07:
-    #     return float(value) / 10_000_000.0
-    # elif scale_type == 0x08:
-    #     return float(value) / 100_000_000.0
-    # elif scale_type == 0x09:
-    #     return float(value) / 1_000_000_000.0
-    # elif scale_type == 0x0A:
-    #     return float(value) / 512.0
-    # elif scale_type == 0x0F:
-    #     return 0.0
-    # else:
-    #     return float(value)  # divided by 1
     match scale_type:
         case 0x00:
             return float(value)  # divided by 1
@@ -531,7 +452,6 @@ def _scale_value(value: int, scale_type: int) -> float:
             return 0.0
         case _:
             return float(value)  # divided by 1
-
 
 def _scale_uint64(value: int, scale_type: int) -> float:
     if value == 18446744073709551615:
