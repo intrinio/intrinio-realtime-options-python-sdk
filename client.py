@@ -6,12 +6,10 @@ import requests
 import websocket
 import logging
 import struct
-import json
 from collections.abc import Callable
 from enum import IntEnum, unique
 
 _SELF_HEAL_BACKOFFS = [10, 30, 60, 300, 600]
-_HEARTBEAT_INTERVAL = 20
 _EMPTY_STRING = ""
 _TRADE_MESSAGE_SIZE = 72  # 61 used + 11 pad
 _QUOTE_MESSAGE_SIZE = 52  # 48 used + 4 pad
@@ -30,10 +28,8 @@ _log: logging.Logger = logging.getLogger('intrinio_realtime_options')
 _log.setLevel(logging.INFO)
 _log.addHandler(_logHandler)
 
-
 def log(message: str):
     _log.info(message)
-
 
 def do_backoff(fn: Callable[[None], bool]):
     i: int = 0
@@ -45,18 +41,15 @@ def do_backoff(fn: Callable[[None], bool]):
         backoff = _SELF_HEAL_BACKOFFS[i]
         success = fn()
 
-
 @unique
 class Providers(IntEnum):
     OPRA = 1
     MANUAL = 2
 
-
 @unique
 class LogLevel(IntEnum):
     DEBUG = logging.DEBUG
     INFO = logging.INFO
-
 
 class Quote:
     def __init__(self, contract: str, ask_price: float, ask_size: int, bid_price: float, bid_size: int, timestamp: float):
@@ -93,25 +86,48 @@ class Quote:
     def get_underlying_symbol(self) -> str:
         return self.contract[0:6].rstrip('_')
 
+@unique
+class Exchange(IntEnum):
+    NYSE_AMERICAN = ord('A')
+    BOSTON = ord('B')
+    CBOE = ord('C')
+    MIAMI_EMERALD = ord('D')
+    BATS_EDGX = ord('E')
+    ISE_GEMINI = ord('H')
+    ISE = ord('I')
+    MERCURY = ord('J')
+    MIAMI = ord('M')
+    MIAMI_PEARL = ord('O')
+    NYSE_ARCA = ord('P')
+    NASDAQ = ord('Q')
+    NASDAQ_BX = ord('T')
+    MEMX = ord('U')
+    CBOE_C2 = ord('W')
+    PHLX = ord('X')
+    BATS_BZX = ord('Z')
 
 class Trade:
-    def __init__(self, contract: str, price: float, size: int, timestamp: float, total_volume: int, ask_price_at_execution: float, bid_price_at_execution: float, underlying_price_at_execution: float):
+    def __init__(self, contract: str, exchange: Exchange, price: float, size: int, timestamp: float, total_volume: int, qualifiers: tuple, ask_price_at_execution: float, bid_price_at_execution: float, underlying_price_at_execution: float):
         self.contract: str = contract
+        self.exchange: Exchange = exchange
         self.price: float = price
         self.size: int = size
         self.timestamp: float = timestamp
         self.total_volume: int = total_volume
+        self.qualifiers: tuple = qualifiers
         self.ask_price_at_execution = ask_price_at_execution
         self.bid_price_at_execution = bid_price_at_execution
         self.underlying_price_at_execution = underlying_price_at_execution
 
     def __str__(self) -> str:
-        return "Trade (Contract: {0}, Price: {1:.2f}, Size: {2}, Timestamp: {3}, TotalVolume: {4}, AskPriceAtExecution: {5:.2f}, BidPriceAtExecution: {6:.2f}, UnderlyingPriceAtExecution: {7:.2f})"\
+        return "Trade (Contract: {0}, Exchange: {1}, Price: {2:.2f}, Size: {3}, Timestamp: {4}, TotalVolume: {5}, Qualifiers: {6}, AskPriceAtExecution: {7:.2f}, BidPriceAtExecution: {8:.2f}, UnderlyingPriceAtExecution: {9:.2f})"\
                .format(self.contract,
+                       self.exchange.name,
                        self.price,
                        self.size,
                        self.timestamp,
                        self.total_volume,
+                       self.qualifiers,
                        self.ask_price_at_execution,
                        self.bid_price_at_execution,
                        self.underlying_price_at_execution)
@@ -133,13 +149,11 @@ class Trade:
     def get_underlying_symbol(self) -> str:
         return self.contract[0:6].rstrip('_')
 
-
 @unique
 class UnusualActivitySentiment(IntEnum):
     NEUTRAL = 0
     BULLISH = 1
     BEARISH = 2
-
 
 @unique
 class UnusualActivityType(IntEnum):
@@ -147,7 +161,6 @@ class UnusualActivityType(IntEnum):
     SWEEP = 4
     LARGE = 5
     UNUSUAL_SWEEP = 6
-
 
 class Refresh:
     def __init__(self, contract: str, open_interest: int, open_price: float, close_price: float, high_price: float, low_price: float):
@@ -183,7 +196,6 @@ class Refresh:
 
     def get_underlying_symbol(self) -> str:
         return self.contract[0:6].rstrip('_')
-
 
 class UnusualActivity:
     def __init__(self,
@@ -238,7 +250,6 @@ class UnusualActivity:
     def get_underlying_symbol(self) -> str:
         return self.contract[0:6].rstrip('_')
 
-
 def _get_option_mask(use_on_trade: bool, use_on_quote: bool, use_on_refresh: bool, use_on_unusual_activity: bool) -> int:
     mask: int = 0
     if use_on_trade:
@@ -251,12 +262,10 @@ def _get_option_mask(use_on_trade: bool, use_on_quote: bool, use_on_refresh: boo
         mask |= 0b1000
     return mask
 
-
 class _WebSocket(websocket.WebSocketApp):
     def __init__(self,
                  ws_url: str,
                  ws_lock: threading.Lock,
-                 heartbeat_thread: threading.Thread,
                  worker_threads: list[threading.Thread],
                  get_channels: Callable[[None], set[tuple[str, bool]]],
                  get_token: Callable[[None], str],
@@ -268,7 +277,6 @@ class _WebSocket(websocket.WebSocketApp):
                  data_queue: queue.Queue):
         super().__init__(ws_url, on_open=self.__on_open, on_close=self.__on_close, on_data=self.__on_data, on_error=self.__on_error)
         self.__wsLock: threading.Lock = ws_lock
-        self.__heartbeat_thread: threading.Thread = heartbeat_thread
         self.__worker_threads: list[threading.Thread] = worker_threads
         self.__get_channels: Callable[[None], set[tuple[str, bool]]] = get_channels
         self.__get_token: Callable[[None], str] = get_token
@@ -288,8 +296,6 @@ class _WebSocket(websocket.WebSocketApp):
         try:
             self.isReady = True
             self.__is_reconnecting = False
-            if not self.__heartbeat_thread.is_alive():
-                self.__heartbeat_thread.start()
             for worker in self.__worker_threads:
                 if not worker.is_alive():
                     worker.start()
@@ -346,9 +352,6 @@ class _WebSocket(websocket.WebSocketApp):
             with _txtMsgLock:
                 global _txtMsgCount
                 _txtMsgCount += 1
-            if data == _EMPTY_STRING:
-                _log.debug("Heartbeat response received")
-            else:
                 _log.error("Error received: {0}".format(data))
 
     def start(self):
@@ -357,10 +360,6 @@ class _WebSocket(websocket.WebSocketApp):
 
     def stop(self):
         super().close()
-
-    def send_heartbeat(self):
-        if self.isReady:
-            super().send(_EMPTY_STRING, websocket.ABNF.OPCODE_TEXT)
 
     def send(self, message: str):
         super().send(message, websocket.ABNF.OPCODE_TEXT)
@@ -371,7 +370,6 @@ class _WebSocket(websocket.WebSocketApp):
     def reset(self):
         self.__last_reset = time.time()
 
-
 class Config:
     def __init__(self, api_key: str, provider: Providers, num_threads: int = 4, log_level: LogLevel = LogLevel.INFO,
                  manual_ip_address: str = None, symbols: set[str] = None):
@@ -381,7 +379,6 @@ class Config:
         self.manual_ip_address: str = manual_ip_address
         self.symbols: list[str] = symbols
         self.log_level: LogLevel = log_level
-
 
 def _transform_contract_to_new(contract: str) -> str:
     if (len(contract) <= 9) or (contract.find('.') >= 9):
@@ -403,17 +400,14 @@ def _transform_contract_to_new(contract: str) -> str:
             whole_price=whole_price,
             decimal_price=decimal_price)
 
-
 def _copy_to(src: list, dest: list, dest_index: int):
     for i in range(0, len(src)):
         dest[i + dest_index] = src[i]
-
 
 def _transform_contract_to_old(alternate_formatted_contract: bytes) -> str:
     # Transform from server format to normal format
     # From this: AAPL_201016C100.00 or ABC_201016C100.003
     # To this: AAPL__201016C00100000 or ABC___201016C00100003
-
     contract_chars: list = [ord('_'), ord('_'), ord('_'), ord('_'), ord('_'), ord('_'), ord('2'), ord('2'), ord('0'), ord('1'), ord('0'), ord('1'), ord('C'), ord('0'), ord('0'), ord('0'), ord('0'), ord('0'), ord('0'), ord('0'), ord('0')]
     underscore_index: int = alternate_formatted_contract.find(ord('_'))
     decimal_index: int = alternate_formatted_contract[9:].find(ord('.')) + 9  # ignore decimals in tickersymbol
@@ -422,65 +416,12 @@ def _transform_contract_to_old(alternate_formatted_contract: bytes) -> str:
     _copy_to(alternate_formatted_contract[underscore_index+7:underscore_index+8], contract_chars, 12)  # copy put / call
     _copy_to(alternate_formatted_contract[underscore_index+8:decimal_index], contract_chars, 18 - (decimal_index - underscore_index - 8))  # whole number copy
     _copy_to(alternate_formatted_contract[decimal_index+1:], contract_chars, 18)  # decimal number copy
-
     return bytes(contract_chars).decode('ascii')
-
-
-def _heartbeat_fn(ws_lock: threading.Lock, get_web_socket: Callable[[], _WebSocket]):
-    _log.debug("Starting heartbeat thread")
-    web_socket = None
-    if get_web_socket is not None:
-        web_socket = get_web_socket()
-    else:
-        _log.info("None was sent to heartbeat thread for get_web_socket parameter!")
-
-    while not _stopFlag.is_set():
-        web_socket = get_web_socket()
-        time.sleep(_HEARTBEAT_INTERVAL)
-        _log.debug("About to send heartbeat.")
-        ws_lock.acquire()
-        try:
-            if (web_socket is not None) and (not _stopFlag.is_set()):
-                _log.debug("Sending heartbeat.")
-                web_socket.send_heartbeat()
-            else:
-                _log.debug("Did not send heartbeat.")
-        finally:
-            ws_lock.release()
-    _log.debug("Heartbeat thread stopped.")
-
 
 def _get_seconds_from_epoch_from_ticks(ticks: int) -> float:
     return float(ticks) / 1_000_000_000.0
 
-
 def _scale_value(value: int, scale_type: int) -> float:
-    # if scale_type == 0x00:
-    #     return float(value)  # divided by 1
-    # elif scale_type == 0x01:
-    #     return float(value) / 10.0
-    # elif scale_type == 0x02:
-    #     return float(value) / 100.0
-    # elif scale_type == 0x03:
-    #     return float(value) / 1_000.0
-    # elif scale_type == 0x04:
-    #     return float(value) / 10_000.0
-    # elif scale_type == 0x05:
-    #     return float(value) / 100_000.0
-    # elif scale_type == 0x06:
-    #     return float(value) / 1_000_000.0
-    # elif scale_type == 0x07:
-    #     return float(value) / 10_000_000.0
-    # elif scale_type == 0x08:
-    #     return float(value) / 100_000_000.0
-    # elif scale_type == 0x09:
-    #     return float(value) / 1_000_000_000.0
-    # elif scale_type == 0x0A:
-    #     return float(value) / 512.0
-    # elif scale_type == 0x0F:
-    #     return 0.0
-    # else:
-    #     return float(value)  # divided by 1
     match scale_type:
         case 0x00:
             return float(value)  # divided by 1
@@ -509,20 +450,17 @@ def _scale_value(value: int, scale_type: int) -> float:
         case _:
             return float(value)  # divided by 1
 
-
 def _scale_uint64(value: int, scale_type: int) -> float:
     if value == 18446744073709551615:
         return _NAN
     else:
         return _scale_value(value, scale_type)
 
-
 def _scale_int32(value: int, scale_type: int) -> float:
     if value == 2147483647 or value == -2147483648:
         return _NAN
     else:
         return _scale_value(value, scale_type)
-
 
 def _thread_fn(index: int, data: queue.Queue,
                on_trade: Callable[[Trade], None],
@@ -549,7 +487,6 @@ def _thread_fn(index: int, data: queue.Queue,
                     # 	bid price [32-35] int32
                     # 	bid size [36-39] uint32
                     # 	timestamp [40-47] uint64
-                    # https://docs.python.org/3/library/struct.html#format-characters
                     contract: str = _transform_contract_to_old(message[1:message[0]])
                     ask_price: float = _scale_int32(struct.unpack_from('<l', message, 24)[0], message[23])
                     ask_size: int = struct.unpack_from('<L', message, 28)[0]
@@ -574,7 +511,8 @@ def _thread_fn(index: int, data: queue.Queue,
                     #  ask price at execution [49-52] int32
                     #  bid price at execution [53-56] int32
                     #  underlying price at execution [57-60] int32
-                    # https://docs.python.org/3/library/struct.html#format-characters
+                    #  qualifiers [61-64]
+                    #  exchange [65]
                     contract: str = _transform_contract_to_old(message[1:message[0]])
                     price: float = _scale_int32(struct.unpack_from('<l', message, 25)[0], message[23])
                     size: int = struct.unpack_from('<L', message, 29)[0]
@@ -583,8 +521,10 @@ def _thread_fn(index: int, data: queue.Queue,
                     ask_price_at_execution: int = _scale_int32(struct.unpack_from('<l', message, 49)[0], message[23])
                     bid_price_at_execution: int = _scale_int32(struct.unpack_from('<l', message, 53)[0], message[23])
                     underlying_price_at_execution: int = _scale_int32(struct.unpack_from('<l', message, 57)[0], message[24])
+                    qualifiers: tuple = (message[61], message[62], message[63], message[64])
+                    exchange: Exchange = Exchange(message[65])
                     if on_trade:
-                        on_trade(Trade(contract, price, size, timestamp, total_volume, ask_price_at_execution, bid_price_at_execution, underlying_price_at_execution))
+                        on_trade(Trade(contract, exchange, price, size, timestamp, total_volume, qualifiers, ask_price_at_execution, bid_price_at_execution, underlying_price_at_execution))
                     start_index = start_index + _TRADE_MESSAGE_SIZE
                 elif msg_type > 2:  # Unusual Activity
                     message: bytes = datum[start_index:(start_index + _UNUSUAL_ACTIVITY_MESSAGE_SIZE)]
@@ -602,7 +542,6 @@ def _thread_fn(index: int, data: queue.Queue,
                     # bid price at execution [46-49] int32
                     # underlying price at execution [50-53] int32
                     # timestamp [54-61] uint64
-                    # https://docs.python.org/3/library/struct.html#format-characters
                     contract: str = _transform_contract_to_old(message[1:message[0]])
                     activity_type: UnusualActivityType = message[22]
                     sentiment: UnusualActivitySentiment = message[23]
@@ -642,7 +581,6 @@ def _thread_fn(index: int, data: queue.Queue,
         except queue.Empty:
             continue
     _log.debug("Worker thread {0} stopped".format(index))
-
 
 class Client:
     def __init__(self, config: Config, on_trade: Callable[[Trade], None], on_quote: Callable[[Quote], None] = None,
@@ -697,9 +635,6 @@ class Client:
         self.__data: queue.Queue = queue.Queue()
         self.__t_lock: threading.Lock = threading.Lock()
         self.__ws_lock: threading.Lock = threading.Lock()
-        self.__heartbeat_thread: threading.Thread = threading.Thread(None, _heartbeat_fn,
-                                                                     args=[self.__ws_lock, self.__get_websocket],
-                                                                     daemon=True)
         self.__worker_threads: list[threading.Thread] = [threading.Thread(None,
                                                                           _thread_fn,
                                                                           args=[i, self.__data, on_trade, on_quote, on_refresh, on_unusual_activity],
@@ -738,7 +673,7 @@ class Client:
 
     def __try_set_token(self) -> bool:
         _log.info("Authorizing...")
-        headers = {"Client-Information": "IntrinioOptionsPythonSDKv2.2"}
+        headers = {"Client-Information": "IntrinioOptionsPythonSDKv2.3"}
         try:
             response: requests.Response = requests.get(self.__get_auth_url(), headers=headers, timeout=1)
             if response.status_code != 200:
@@ -829,7 +764,6 @@ class Client:
         ws_url: str = self.__get_web_socket_url(token)
         self.__webSocket = _WebSocket(ws_url,
                                       self.__ws_lock,
-                                      self.__heartbeat_thread,
                                       self.__worker_threads,
                                       self.__get_channels,
                                       self.__get_token,
