@@ -321,9 +321,8 @@ class _WebSocket(websocket.WebSocketApp):
         else:
             with self.__wsLock:
                 self.__is_reconnecting = True
-            if (time.time() - self.__last_reset > (60 * 60 * 24 * 5)):
-                token: str = self.__get_token()
-                super().url = self.__get_url(token)
+            token: str = self.__get_token(None)
+            super().url = self.__get_url(token)
             self.start()
             return False
 
@@ -372,13 +371,14 @@ class _WebSocket(websocket.WebSocketApp):
 
 class Config:
     def __init__(self, api_key: str, provider: Providers, num_threads: int = 4, log_level: LogLevel = LogLevel.INFO,
-                 manual_ip_address: str = None, symbols: set[str] = None):
+                 manual_ip_address: str = None, symbols: set[str] = None, delayed: bool = False):
         self.api_key: str = api_key
         self.provider: Providers = provider
         self.num_threads: int = num_threads
         self.manual_ip_address: str = manual_ip_address
         self.symbols: list[str] = symbols
         self.log_level: LogLevel = log_level
+        self.delayed: bool = delayed
 
 def _transform_contract_to_new(contract: str) -> str:
     if (len(contract) <= 9) or (contract.find('.') >= 9):
@@ -623,6 +623,10 @@ class Client:
                 raise ValueError("Parameter 'on_unusual_activity' must be a function")
         else:
             self.__use_on_unusual_activity: bool = False
+        if (not config.delayed) or (not isinstance(config.delayed, bool)):
+            self.__delayed: bool = False
+        else:
+            self.__delayed: bool = config.delayed
         self.__provider: Providers = config.provider
         self.__apiKey: str = config.api_key
         self.__manualIP: str = config.manual_ip_address
@@ -664,10 +668,11 @@ class Client:
             raise ValueError("Provider not specified")
 
     def __get_web_socket_url(self, token: str) -> str:
+        delay: str = "&delayed=true" if self.__delayed else ""
         if self.__provider == Providers.OPRA:
-            return "wss://realtime-options.intrinio.com/socket/websocket?vsn=1.0.0&token=" + token
+            return "wss://realtime-options.intrinio.com/socket/websocket?vsn=1.0.0&token=" + token + delay
         elif self.__provider == Providers.MANUAL:
-            return "ws://" + self.__manualIP + "/socket/websocket?vsn=1.0.0&token=" + token
+            return "ws://" + self.__manualIP + "/socket/websocket?vsn=1.0.0&token=" + token + delay
         else:
             raise ValueError("Provider not specified")
 
