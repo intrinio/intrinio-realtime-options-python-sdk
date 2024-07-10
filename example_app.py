@@ -75,7 +75,7 @@ class Summarize(threading.Thread):
 
     def run(self):
         while not self.__stop_flag.is_set():
-            time.sleep(10.0)
+            time.sleep(30.0)
             (dataMsgs, txtMsgs, queueDepth) = self.__client.get_stats()
             client.log("Client Stats - Data Messages: {0}, Text Messages: {1}, Queue Depth: {2}".format(dataMsgs, txtMsgs, queueDepth))
             client.log(
@@ -97,7 +97,7 @@ config: client.Config = client.Config(
     num_threads=8,
     symbols=["AAPL", "BRKB__230217C00300000"], # this is a static list of symbols (options contracts or option chains) that will automatically be subscribed to when the client starts
     log_level=client.LogLevel.INFO,
-    delayed=True) #set delayed parameter to true if you have realtime access but want the data delayed 15 minutes anyway
+    delayed=False) #set delayed parameter to true if you have realtime access but want the data delayed 15 minutes anyway
 
 # Register only the callbacks that you want.
 # Take special care when registering the 'on_quote' handler as it will increase throughput by ~10x
@@ -124,7 +124,7 @@ intrinioRealtimeOptionsClient.start()
 intrinioRealtimeOptionsClient.join()
 
 # Use this to subscribe to the entire universe of symbols (option contracts). This requires special permission.
-#intrinioRealtimeOptionsClient.join_firehose()
+# intrinioRealtimeOptionsClient.join_firehose()
 
 # Use this to subscribe, dynamically, to an option chain (all option contracts for a given underlying contract).
 # intrinioRealtimeOptionsClient.join("AAPL")

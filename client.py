@@ -321,9 +321,8 @@ class _WebSocket(websocket.WebSocketApp):
         else:
             with self.__wsLock:
                 self.__is_reconnecting = True
-            if (time.time() - self.__last_reset > (60 * 60 * 24 * 5)):
-                token: str = self.__get_token()
-                super().url = self.__get_url(token)
+            token: str = self.__get_token(None)
+            super().url = self.__get_url(token)
             self.start()
             return False
 
