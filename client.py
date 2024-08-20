@@ -105,6 +105,11 @@ class Exchange(IntEnum):
     CBOE_C2 = ord('W')
     PHLX = ord('X')
     BATS_BZX = ord('Z')
+    UNKNOWN = ord('?')
+
+    @classmethod
+    def _missing_(cls, value):
+        return cls.UNKNOWN
 
 class Trade:
     def __init__(self, contract: str, exchange: Exchange, price: float, size: int, timestamp: float, total_volume: int, qualifiers: tuple, ask_price_at_execution: float, bid_price_at_execution: float, underlying_price_at_execution: float):
