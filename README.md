@@ -1,7 +1,7 @@
 # intrinio-realtime-options-python-sdk
 SDK for working with Intrinio's realtime options feed via WebSocket
 
-[Intrinio](https://intrinio.com/) provides real-time stock option prices via a two-way WebSocket connection. To get started, [subscribe to a real-time data feed](https://intrinio.com/financial-market-data/options-data) and follow the instructions below.
+[Intrinio](https://intrinio.com/) provides real-time and delayed stock option prices via a two-way WebSocket connection. To get started, [subscribe to a real-time data feed](https://intrinio.com/financial-market-data/options-data) and follow the instructions below.
 
 ## Requirements
 
@@ -135,7 +135,8 @@ config: client.Config = client.Config(
     num_threads=8,
     symbols=["AAPL"],
     # this is a static list of symbols (options contracts or option chains) that will automatically be subscribed to when the client starts
-    log_level=client.LogLevel.INFO)
+    log_level=client.LogLevel.INFO,
+    delayed=False) #set delayed parameter to true if you have realtime access but want the data delayed 15 minutes anyway)
 
 # Register only the callbacks that you want.
 # Take special care when registering the 'on_quote' handler as it will increase throughput by ~10x
@@ -183,7 +184,7 @@ Note that quotes (ask and bid updates) comprise 99% of the volume of the entire 
 
 ## Providers
 
-Currently, Intrinio offers realtime data for this SDK from the following providers:
+Currently, Intrinio offers realtime and delayed data for this SDK from the following providers:
 
 * OPRA - [Homepage](https://www.opraplan.com/)
 
@@ -367,6 +368,7 @@ After subscribing, using your starting list of symbols, you will call the `start
 If you are using the non-firehose feed, you may update your subscriptions on the fly, using the `join` and `leave` methods.
 The WebSocket client is designed for near-indefinite operation. It will automatically reconnect if a connection drops/fails and when then servers turn on every morning.
 If you wish to perform a graceful shutdown of the application, please call the `stop` method.
+Realtime vs delayed is automatically handled by your account authorization, but if you have realtime and wish to force delayed, you may do so via the configuration setting.
 
 ### Methods
 
