@@ -494,7 +494,7 @@ def _thread_fn(index: int, data: queue.Queue,
                     # 	bid price [32-35] int32
                     # 	bid size [36-39] uint32
                     # 	timestamp [40-47] uint64
-                    contract: str = _transform_contract_to_old(message[1:message[0]])
+                    contract: str = _transform_contract_to_old(message[1:message[0]+1])
                     ask_price: float = _scale_int32(struct.unpack_from('<l', message, 24)[0], message[23])
                     ask_size: int = struct.unpack_from('<L', message, 28)[0]
                     bid_price: float = _scale_int32(struct.unpack_from('<l', message, 32)[0], message[23])
@@ -520,7 +520,7 @@ def _thread_fn(index: int, data: queue.Queue,
                     #  underlying price at execution [57-60] int32
                     #  qualifiers [61-64]
                     #  exchange [65]
-                    contract: str = _transform_contract_to_old(message[1:message[0]])
+                    contract: str = _transform_contract_to_old(message[1:message[0]+1])
                     price: float = _scale_int32(struct.unpack_from('<l', message, 25)[0], message[23])
                     size: int = struct.unpack_from('<L', message, 29)[0]
                     timestamp: float = _get_seconds_from_epoch_from_ticks(struct.unpack_from('<Q', message, 33)[0])
@@ -549,7 +549,7 @@ def _thread_fn(index: int, data: queue.Queue,
                     # bid price at execution [46-49] int32
                     # underlying price at execution [50-53] int32
                     # timestamp [54-61] uint64
-                    contract: str = _transform_contract_to_old(message[1:message[0]])
+                    contract: str = _transform_contract_to_old(message[1:message[0]+1])
                     activity_type: UnusualActivityType = message[22]
                     sentiment: UnusualActivitySentiment = message[23]
                     total_value: float = _scale_uint64(struct.unpack_from('<Q', message, 26)[0], message[24])
@@ -574,7 +574,7 @@ def _thread_fn(index: int, data: queue.Queue,
                     # close price [32-35] int32
                     # high price [36-39] int32
                     # low price [40-43] int32
-                    contract: str = _transform_contract_to_old(message[1:message[0]])
+                    contract: str = _transform_contract_to_old(message[1:message[0]+1])
                     open_interest: int = struct.unpack_from('<L', message, 24)[0]
                     open_price: float = _scale_int32(struct.unpack_from('<l', message, 28)[0], message[23])
                     close_price: float = _scale_int32(struct.unpack_from('<l', message, 32)[0], message[23])
