@@ -587,6 +587,9 @@ def _thread_fn(index: int, data: queue.Queue,
                     _log.warn("Invalid Message Type: {0}".format(msg_type))
         except queue.Empty:
             continue
+        except Exception as e:
+            _log.error(f"Worker thread {index} Exception {e}")
+            continue
     _log.debug("Worker thread {0} stopped".format(index))
 
 class Client:
