@@ -585,7 +585,7 @@ def _thread_fn(index: int, data: queue.Queue,
                     start_index = start_index + _REFRESH_MESSAGE_SIZE
                 else:
                     _log.warn("Invalid Message Type: {0}".format(msg_type))
-        except queue.Empty:
+        except:
             continue
     _log.debug("Worker thread {0} stopped".format(index))
 
