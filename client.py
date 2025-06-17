@@ -328,6 +328,7 @@ class _WebSocket(websocket.WebSocketApp):
         else:
             with self.__wsLock:
                 self.__is_reconnecting = True
+            self.stop()
             token: str = self.__get_token(None)
             super().url = self.__get_url(token)
             self.start()
