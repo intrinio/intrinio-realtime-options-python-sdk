@@ -1,4 +1,5 @@
 # intrinio-realtime-options-python-sdk
+DEPRECATED - We combined this repository with the equities repository [here](https://github.com/intrinio/intrinio-realtime-python-sdk).  This repository will no longer receive updates. All updates to the options client will be in its new home.
 SDK for working with Intrinio's realtime options feed via WebSocket
 
 [Intrinio](https://intrinio.com/) provides real-time and delayed stock option prices via a two-way WebSocket connection. To get started, [subscribe to a real-time data feed](https://intrinio.com/financial-market-data/options-data) and follow the instructions below.
